@@ -6,6 +6,9 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import MinMaxScaler
 
 import plotly.express as px
+import shap
+
+from scipy.optimize import linprog
 
 # ----------------------------------------------------
 # App Configuration
@@ -26,7 +29,7 @@ st.markdown("""
 st.divider()
 
 # ----------------------------------------------------
-# File Upload
+# Upload Dataset
 # ----------------------------------------------------
 uploaded_file = st.file_uploader(
     "📁 Upload Capital Allocation Dataset (CSV)",
@@ -34,16 +37,13 @@ uploaded_file = st.file_uploader(
 )
 
 if uploaded_file is None:
-    st.info("Please upload the dataset to begin the analysis.")
+    st.info("Please upload the dataset to begin analysis.")
     st.stop()
 
-# ----------------------------------------------------
-# Load Dataset
-# ----------------------------------------------------
 df = pd.read_csv(uploaded_file)
 
 # ----------------------------------------------------
-# Column Validation (CRITICAL)
+# Column Validation
 # ----------------------------------------------------
 required_columns = [
     "Project_ID",
@@ -57,20 +57,18 @@ required_columns = [
     "Actual_NPV"
 ]
 
-missing_cols = [col for col in required_columns if col not in df.columns]
-if missing_cols:
-    st.error(f"❌ Missing required columns: {missing_cols}")
+missing = [c for c in required_columns if c not in df.columns]
+if missing:
+    st.error(f"Missing required columns: {missing}")
     st.stop()
 
-st.success("✅ Dataset uploaded and validated successfully")
+st.success("Dataset validated successfully")
 
 # ----------------------------------------------------
 # Dataset Preview
 # ----------------------------------------------------
 st.subheader("🔍 Dataset Preview")
 st.dataframe(df, use_container_width=True)
-
-st.divider()
 
 # ----------------------------------------------------
 # Feature Engineering
@@ -107,7 +105,7 @@ df["Predicted_ROI"] = roi_model.predict(X)
 df["Predicted_NPV"] = npv_model.predict(X)
 
 # ----------------------------------------------------
-# Capital Allocation Score
+# Allocation Score
 # ----------------------------------------------------
 scaler = MinMaxScaler()
 
@@ -121,132 +119,114 @@ df["Allocation_Score"] = (
     - 0.1 * df["Risk_Score"]
 )
 
-df_sorted = df.sort_values("Allocation_Score", ascending=False)
-
 # ----------------------------------------------------
 # KPIs
 # ----------------------------------------------------
 st.subheader("📌 Portfolio Overview")
 
-kpi1, kpi2, kpi3 = st.columns(3)
+c1, c2, c3 = st.columns(3)
 
-kpi1.metric(
-    "Total Capital Invested",
-    f"₹{df['Investment_Capital'].sum():,.0f}"
+c1.metric("Total Capital", f"₹{df['Investment_Capital'].sum():,.0f}")
+c2.metric("Avg Predicted ROI", f"{df['Predicted_ROI'].mean():.2f}%")
+c3.metric("Avg Predicted NPV", f"₹{df['Predicted_NPV'].mean():,.0f}")
+
+st.divider()
+
+# ----------------------------------------------------
+# Capital Budget Optimization
+# ----------------------------------------------------
+st.subheader("💰 Capital Budget Optimization")
+
+budget = st.number_input(
+    "Enter Total Capital Budget (₹)",
+    min_value=0.0,
+    value=float(df["Investment_Capital"].sum() * 0.6),
+    step=100000.0
 )
 
-kpi2.metric(
-    "Average Predicted ROI",
-    f"{df['Predicted_ROI'].mean():.2f}%"
+# Linear Programming (maximize Allocation Score)
+c = -df["Allocation_Score"].values
+A = [df["Investment_Capital"].values]
+b = [budget]
+bounds = [(0, 1) for _ in range(len(df))]
+
+opt = linprog(c, A_ub=A, b_ub=b, bounds=bounds, method="highs")
+
+df["Selected"] = opt.x.round(0)
+
+optimized_df = df[df["Selected"] == 1]
+
+st.success(
+    f"Optimized Capital Used: ₹{optimized_df['Investment_Capital'].sum():,.0f}"
 )
 
-kpi3.metric(
-    "Average Predicted NPV",
-    f"₹{df['Predicted_NPV'].mean():,.0f}"
+st.dataframe(
+    optimized_df[
+        ["Project_ID", "Department", "Investment_Capital", "Allocation_Score"]
+    ],
+    use_container_width=True
 )
 
 st.divider()
 
 # ----------------------------------------------------
-# Allocation Ranking
+# SHAP Explainability
 # ----------------------------------------------------
-st.subheader("🏆 Capital Allocation Priority")
+st.subheader("🔍 AI Explainability (SHAP)")
 
-fig_rank = px.bar(
-    df_sorted.head(15),
-    x="Allocation_Score",
-    y="Project_ID",
+explainer = shap.TreeExplainer(roi_model)
+shap_values = explainer.shap_values(X)
+
+shap_df = pd.DataFrame(
+    np.abs(shap_values),
+    columns=features
+)
+
+st.markdown("**Feature Importance for ROI Prediction**")
+
+fig_shap = px.bar(
+    shap_df.mean().sort_values(ascending=False),
     orientation="h",
-    color="Allocation_Score",
-    title="Top 15 Projects by Allocation Score"
+    title="SHAP Feature Impact on ROI"
 )
 
-st.plotly_chart(fig_rank, use_container_width=True)
+st.plotly_chart(fig_shap, use_container_width=True)
+
+st.divider()
 
 # ----------------------------------------------------
-# SAFE SIZE SCALING FOR 3D VISUAL
+# DIFFERENT 3D GRAPH (NEW)
 # ----------------------------------------------------
-df["NPV_For_Size"] = df["Predicted_NPV"].replace(
-    [np.inf, -np.inf], np.nan
-)
+st.subheader("🧊 Strategic Risk–Priority 3D View")
 
-df["NPV_For_Size"] = df["NPV_For_Size"].fillna(
-    df["NPV_For_Size"].median()
-)
-
-df["NPV_For_Size"] = df["NPV_For_Size"].clip(lower=1)
-
-size_scaler = MinMaxScaler(feature_range=(5, 40))
-df["NPV_Size_Scaled"] = size_scaler.fit_transform(
-    df[["NPV_For_Size"]]
-)
-
-# ----------------------------------------------------
-# 3D Visualization
-# ----------------------------------------------------
-st.subheader("🧊 3D Investment Landscape")
-
-fig_3d = px.scatter_3d(
+fig_3d_new = px.scatter_3d(
     df,
-    x="Risk_Score",
-    y="Predicted_ROI",
-    z="Investment_Capital",
-    color="Department",
-    size="NPV_Size_Scaled",
-    title="Risk vs Return vs Capital Allocation"
-)
-
-fig_3d.update_traces(marker=dict(opacity=0.85))
-fig_3d.update_layout(margin=dict(l=0, r=0, t=40, b=0))
-
-st.plotly_chart(fig_3d, use_container_width=True)
-
-# ----------------------------------------------------
-# Scenario Analysis
-# ----------------------------------------------------
-st.subheader("🔄 Scenario Analysis")
-
-market_adj = st.slider(
-    "Market Trend Adjustment",
-    0.8, 1.2, 1.0, 0.05
-)
-
-risk_adj = st.slider(
-    "Risk Escalation Factor",
-    1.0, 1.5, 1.0, 0.05
-)
-
-scenario_X = X.copy()
-scenario_X["Market_Trend_Index"] *= market_adj
-scenario_X["Risk_Score"] *= risk_adj
-
-df["Scenario_ROI"] = roi_model.predict(scenario_X)
-df["Scenario_NPV"] = npv_model.predict(scenario_X)
-
-fig_scenario = px.scatter(
-    df,
-    x="Scenario_ROI",
-    y="Scenario_NPV",
+    x="Strategic_Alignment",
+    y="Risk_Score",
+    z="Allocation_Score",
     color="Department",
     size="Investment_Capital",
-    title="Scenario Impact on ROI & NPV"
+    title="Strategy vs Risk vs Allocation Priority"
 )
 
-st.plotly_chart(fig_scenario, use_container_width=True)
+fig_3d_new.update_traces(marker=dict(opacity=0.85))
+fig_3d_new.update_layout(margin=dict(l=0, r=0, t=40, b=0))
+
+st.plotly_chart(fig_3d_new, use_container_width=True)
 
 # ----------------------------------------------------
 # Business Explanation
 # ----------------------------------------------------
-st.subheader("🧠 Decision Support Explanation")
+st.subheader("🧠 Executive Interpretation")
 
 st.markdown("""
-**How CAPITALIQ-AI supports finance leaders:**
+**How this system supports strategic capital allocation:**
 
-- Uses historical ROI & NPV to **forecast future project performance**
-- Applies a **transparent capital allocation score**
-- Balances **return, value creation, strategy, and risk**
-- Enables **scenario-based stress testing**
-- Provides **clear, defensible, AI-backed recommendations**
+- AI models forecast **ROI & NPV** using historical patterns
+- SHAP explains **why predictions are made**
+- Optimization selects **maximum-value projects under budget**
+- 3D visualization highlights **strategy-risk-priority trade-offs**
+- Enables **data-driven, defensible investment decisions**
 """)
 
-st.success("✅ AI-Driven Capital Allocation Analysis Completed Successfully")
+st.success("✅ CAPITALIQ-AI Analysis Completed Successfully")

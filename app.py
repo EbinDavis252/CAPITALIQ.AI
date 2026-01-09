@@ -5,10 +5,8 @@ import numpy as np
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import MinMaxScaler
 
-import plotly.express as px
-import shap
-
 from scipy.optimize import linprog
+import plotly.express as px
 
 # ----------------------------------------------------
 # App Configuration
@@ -144,15 +142,14 @@ budget = st.number_input(
     step=100000.0
 )
 
-# Linear Programming (maximize Allocation Score)
 c = -df["Allocation_Score"].values
 A = [df["Investment_Capital"].values]
 b = [budget]
 bounds = [(0, 1) for _ in range(len(df))]
 
-opt = linprog(c, A_ub=A, b_ub=b, bounds=bounds, method="highs")
+result = linprog(c, A_ub=A, b_ub=b, bounds=bounds, method="highs")
 
-df["Selected"] = opt.x.round(0)
+df["Selected"] = result.x.round(0)
 
 optimized_df = df[df["Selected"] == 1]
 
@@ -170,36 +167,31 @@ st.dataframe(
 st.divider()
 
 # ----------------------------------------------------
-# SHAP Explainability
+# AI Explainability (Feature Importance)
 # ----------------------------------------------------
-st.subheader("🔍 AI Explainability (SHAP)")
+st.subheader("🔍 AI Explainability")
 
-explainer = shap.TreeExplainer(roi_model)
-shap_values = explainer.shap_values(X)
+importance_df = pd.DataFrame({
+    "Feature": features,
+    "Importance": roi_model.feature_importances_
+}).sort_values("Importance", ascending=False)
 
-shap_df = pd.DataFrame(
-    np.abs(shap_values),
-    columns=features
-)
-
-st.markdown("**Feature Importance for ROI Prediction**")
-
-fig_shap = px.bar(
-    shap_df.mean().sort_values(ascending=False),
+fig_importance = px.bar(
+    importance_df,
+    x="Importance",
+    y="Feature",
     orientation="h",
-    title="SHAP Feature Impact on ROI"
+    title="Feature Importance for ROI Prediction"
 )
 
-st.plotly_chart(fig_shap, use_container_width=True)
-
-st.divider()
+st.plotly_chart(fig_importance, use_container_width=True)
 
 # ----------------------------------------------------
-# DIFFERENT 3D GRAPH (NEW)
+# DIFFERENT 3D GRAPH
 # ----------------------------------------------------
 st.subheader("🧊 Strategic Risk–Priority 3D View")
 
-fig_3d_new = px.scatter_3d(
+fig_3d = px.scatter_3d(
     df,
     x="Strategic_Alignment",
     y="Risk_Score",
@@ -209,10 +201,10 @@ fig_3d_new = px.scatter_3d(
     title="Strategy vs Risk vs Allocation Priority"
 )
 
-fig_3d_new.update_traces(marker=dict(opacity=0.85))
-fig_3d_new.update_layout(margin=dict(l=0, r=0, t=40, b=0))
+fig_3d.update_traces(marker=dict(opacity=0.85))
+fig_3d.update_layout(margin=dict(l=0, r=0, t=40, b=0))
 
-st.plotly_chart(fig_3d_new, use_container_width=True)
+st.plotly_chart(fig_3d, use_container_width=True)
 
 # ----------------------------------------------------
 # Business Explanation
@@ -220,13 +212,13 @@ st.plotly_chart(fig_3d_new, use_container_width=True)
 st.subheader("🧠 Executive Interpretation")
 
 st.markdown("""
-**How this system supports strategic capital allocation:**
+**Decision-support capabilities of CAPITALIQ-AI™:**
 
-- AI models forecast **ROI & NPV** using historical patterns
-- SHAP explains **why predictions are made**
-- Optimization selects **maximum-value projects under budget**
-- 3D visualization highlights **strategy-risk-priority trade-offs**
-- Enables **data-driven, defensible investment decisions**
+- AI-based forecasting of ROI and NPV
+- Transparent capital allocation scoring
+- Budget-constrained portfolio optimization
+- Feature-level explainability for decision trust
+- Strategic risk-priority visualization
 """)
 
 st.success("✅ CAPITALIQ-AI Analysis Completed Successfully")

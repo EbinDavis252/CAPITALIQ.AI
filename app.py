@@ -1,325 +1,250 @@
 import streamlit as st
+import yfinance as yf
 import pandas as pd
 import numpy as np
-import plotly.express as px
-import plotly.graph_objects as go
-import seaborn as sns
-import matplotlib.pyplot as plt
-
+import scipy.optimize as sco
+from textblob import TextBlob
 from sklearn.ensemble import RandomForestRegressor
-from scipy.optimize import linprog
+import plotly.express as px
+import datetime
 
-# ----------------------------------------------------
-# 1. Page Configuration & "Glassmorphism" CSS
-# ----------------------------------------------------
-st.set_page_config(
-    page_title="CAPITALIQ-AI™ | Enterprise Edition",
-    layout="wide",
-    page_icon="💎",
-    initial_sidebar_state="expanded"
-)
+# --- PAGE CONFIGURATION ---
+st.set_page_config(page_title="Friday: Capital Allocation Advisor", layout="wide", page_icon="📈")
 
-# --- THEME ENGINE: GLASSMORPHISM & HIGH CONTRAST ---
+# --- CUSTOM CSS ---
 st.markdown("""
-    <style>
-    /* 1. Global Background (Dark Luxury) */
-    .stApp {
-        background-image: linear_gradient(rgba(15, 23, 42, 0.9), rgba(15, 23, 42, 0.95)), 
-                          url('https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=80&w=2070&auto=format&fit=crop');
-        background-size: cover;
-        background-attachment: fixed;
-    }
-
-    /* 2. Text Visibility Fixes (Force White) */
-    h1, h2, h3, h4, h5, h6, .stMarkdown, p, li, span, label, .stDataFrame {
-        color: #e2e8f0 !important;
-        font-family: 'Inter', sans-serif;
-    }
-    
-    /* 3. Glass Cards (Semi-transparent backgrounds for readability) */
-    div[data-testid="stMetric"], div[data-testid="stExpander"] {
-        background-color: rgba(30, 41, 59, 0.7); /* Dark Blue-Grey Glass */
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        backdrop-filter: blur(10px);
-        border-radius: 12px;
-        padding: 20px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
-    }
-
-    /* 4. Metric Value Coloring */
-    div[data-testid="stMetricValue"] {
-        color: #00e676 !important; /* Bright Green */
-        font-weight: 700;
-    }
-    div[data-testid="stMetricLabel"] {
-        color: #94a3b8 !important; /* Muted Grey */
-    }
-
-    /* 5. Tables (Dark Mode) */
-    .stDataFrame {
-        background-color: transparent !important;
-    }
-    div[data-testid="stTable"] {
-        color: white;
-    }
-
-    /* 6. Sidebar Styling */
-    section[data-testid="stSidebar"] {
-        background-color: #0f172a; /* Slate 900 */
-        border-right: 1px solid #334155;
-    }
-    
-    /* 7. Input Widgets (Sliders/Inputs) */
-    .stNumberInput, .stSlider {
-        color: white;
-    }
-    </style>
+<style>
+    .metric-card {background-color: #f0f2f6; border-radius: 10px; padding: 20px; text-align: center;}
+    .stAlert {border-radius: 10px;}
+</style>
 """, unsafe_allow_html=True)
 
-# ----------------------------------------------------
-# 2. Sidebar: Strategy Controls
-# ----------------------------------------------------
-with st.sidebar:
-    st.title("💎 CAPITALIQ-AI™")
-    st.caption("Advanced Decision Support System")
-    st.markdown("---")
-    
-    st.subheader("1. Data Intelligence")
-    hist_file = st.file_uploader("📂 Historical Data (Train)", type=["csv"])
-    prop_file = st.file_uploader("📂 New Proposals (Predict)", type=["csv"])
-    
-    st.markdown("---")
-    st.subheader("2. Strategic Constraints")
-    budget_input = st.number_input("💰 Capital Budget (₹)", value=15000000.0, step=1000000.0)
-    max_risk = st.slider("⚠️ Max Portfolio Risk", 1.0, 10.0, 6.5)
-    
-    st.markdown("---")
-    st.subheader("3. Market Simulator")
-    market_shock = st.slider("📉 Market Shock Factor", -0.20, 0.20, 0.0, 0.01, format="%+.0f%%")
-    
-    st.markdown("---")
-    st.info("Live Project: Grant Thornton Bharat LLP")
-
-# ----------------------------------------------------
-# 3. Main Application Logic
-# ----------------------------------------------------
-st.title("📊 Executive Capital Command Center")
-st.markdown("### _AI-Powered Analytics for High-Stakes Investment Decisions_")
-
-if hist_file is None or prop_file is None:
-    # Empty State - Friendly Prompt
-    st.warning("⚠️ **System Standby:** Please upload project data to initialize the Strategic Engine.")
-    st.info("💡 **Tip:** Upload 'grant_thornton_project_data.csv' and 'new_project_proposals.csv'.")
-    st.stop()
-
-# Load Data
+# --- 1. DATA FETCHING & PROCESSING ---
 @st.cache_data
-def load_data(h, p):
-    return pd.read_csv(h), pd.read_csv(p)
+def fetch_data(tickers, start_date, end_date):
+    """Fetches historical stock data."""
+    try:
+        data = yf.download(tickers, start=start_date, end=end_date)['Adj Close']
+        return data
+    except Exception as e:
+        st.error(f"Error fetching data: {e}")
+        return pd.DataFrame()
 
-df_hist, df_prop = load_data(hist_file, prop_file)
+def calculate_technical_indicators(df):
+    """Calculates SMA, Volatility, and Returns for the XAI model."""
+    indicators = pd.DataFrame(index=df.index)
+    indicators['Close'] = df
+    indicators['SMA_50'] = df.rolling(window=50).mean()
+    indicators['SMA_200'] = df.rolling(window=200).mean()
+    indicators['Daily_Return'] = df.pct_change()
+    indicators['Volatility'] = df.rolling(window=20).std()
+    # Momentum: Price vs 10 days ago
+    indicators['Momentum'] = df / df.shift(10) - 1
+    indicators.dropna(inplace=True)
+    return indicators
 
-# ----------------------------------------------------
-# 4. Advanced ML Pipeline
-# ----------------------------------------------------
-features = ["Investment_Capital", "Duration_Months", "Risk_Score", "Strategic_Alignment", "Market_Trend_Index"]
-targets = ["Actual_ROI_Pct", "Actual_NPV"]
+def analyze_sentiment_live(ticker):
+    """
+    Fetches REAL news from Yahoo Finance and scores sentiment.
+    """
+    try:
+        stock = yf.Ticker(ticker)
+        news_list = stock.news
+        
+        headlines = []
+        sentiment_scores = []
+        
+        if not news_list:
+            return 0, ["No recent news found via API."]
 
-# Train Models
-with st.spinner('⚙️ Calibrating AI Models...'):
-    rf_roi = RandomForestRegressor(n_estimators=200, random_state=42)
-    rf_npv = RandomForestRegressor(n_estimators=200, random_state=42)
+        # Analyze top 5 news items
+        for item in news_list[:5]:
+            title = item.get('title', '')
+            headlines.append(title)
+            blob = TextBlob(title)
+            sentiment_scores.append(blob.sentiment.polarity)
+        
+        avg_score = np.mean(sentiment_scores) if sentiment_scores else 0
+        return avg_score, headlines
+        
+    except Exception as e:
+        return 0, [f"Could not fetch news: {str(e)}"]
+
+# --- 2. OPTIMIZATION ENGINE (WITH SCENARIO LOGIC) ---
+def portfolio_annualised_performance(weights, mean_returns, cov_matrix):
+    returns = np.sum(mean_returns * weights) * 252
+    std = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights))) * np.sqrt(252)
+    return std, returns
+
+def neg_sharpe_ratio(weights, mean_returns, cov_matrix, risk_free_rate):
+    p_var, p_ret = portfolio_annualised_performance(weights, mean_returns, cov_matrix)
+    return -(p_ret - risk_free_rate) / p_var
+
+def optimize_portfolio(mean_returns, cov_matrix, max_weight_per_asset):
+    num_assets = len(mean_returns)
+    args = (mean_returns, cov_matrix, 0.04) # Assuming 4% risk-free rate
+    constraints = ({'type': 'eq', 'fun': lambda x: np.sum(x) - 1})
+    bounds = tuple((0.0, max_weight_per_asset) for asset in range(num_assets))
     
-    rf_roi.fit(df_hist[features], df_hist["Actual_ROI_Pct"])
-    rf_npv.fit(df_hist[features], df_hist["Actual_NPV"])
+    result = sco.minimize(neg_sharpe_ratio, num_assets*[1./num_assets,], args=args,
+                        method='SLSQP', bounds=bounds, constraints=constraints)
+    return result
 
-# Prediction with Scenario Adjustment
-df_prop["Pred_ROI"] = rf_roi.predict(df_prop[features]) * (1 + market_shock)
-df_prop["Pred_NPV"] = rf_npv.predict(df_prop[features]) * (1 + market_shock)
-
-# Enhancement: Efficiency Ratio (Return per unit of Risk)
-df_prop["Efficiency_Ratio"] = df_prop["Pred_ROI"] / df_prop["Risk_Score"]
-
-# ----------------------------------------------------
-# 5. Advanced Optimization Engine
-# ----------------------------------------------------
-c = -df_prop["Pred_NPV"].values 
-A = [df_prop["Investment_Capital"].values]
-b = [budget_input]
-bounds = [(0, 1) for _ in range(len(df_prop))]
-
-res = linprog(c, A_ub=A, b_ub=b, bounds=bounds, method='highs')
-df_prop["Selected"] = res.x.round(0) if res.success else 0
-portfolio = df_prop[df_prop["Selected"] == 1]
-
-# ----------------------------------------------------
-# 6. Enterprise Dashboard Tabs
-# ----------------------------------------------------
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "🚀 Executive Summary", 
-    "🧠 AI Insights",
-    "⚡ Efficient Frontier", 
-    "💰 Optimization Report",
-    "🧊 Strategic 3D Map"
-])
-
-# Common Plotly Layout for Dark Theme
-def dark_chart(fig):
-    fig.update_layout(
-        template="plotly_dark",
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(color="#e2e8f0")
-    )
-    return fig
-
-# --- TAB 1: EXECUTIVE SUMMARY ---
-with tab1:
-    st.subheader("📌 Portfolio Performance Snapshot")
+# --- 3. EXPLAINABLE AI (XAI) ENGINE ---
+def train_and_explain_ai(ticker_data):
+    """Trains a Random Forest to explain what drives the stock's movement."""
+    df = calculate_technical_indicators(ticker_data)
     
-    # Hero Metrics
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Projects Funded", f"{len(portfolio)}", f"out of {len(df_prop)}")
-    c2.metric("Capital Deployed", f"₹{portfolio['Investment_Capital'].sum()/1e6:.1f}M", f"Limit: ₹{budget_input/1e6:.1f}M")
-    c3.metric("Projected NPV", f"₹{portfolio['Pred_NPV'].sum()/1e6:.2f}M", delta=f"{market_shock*100:+.0f}% Scenario")
-    c4.metric("Avg Risk Score", f"{portfolio['Risk_Score'].mean():.2f}", delta="Target < 6.5", delta_color="off")
+    # Target: Predict next day's return
+    df['Target'] = df['Daily_Return'].shift(-1)
+    df.dropna(inplace=True)
+    
+    features = ['SMA_50', 'SMA_200', 'Volatility', 'Momentum']
+    X = df[features]
+    y = df['Target']
+    
+    if len(X) < 10: # Not enough data
+        return None, None, None
+        
+    model = RandomForestRegressor(n_estimators=100, random_state=42)
+    model.fit(X, y)
+    
+    importances = model.feature_importances_
+    explanation = pd.DataFrame({'Feature': features, 'Importance': importances})
+    explanation = explanation.sort_values(by='Importance', ascending=False)
+    
+    return model, explanation, df.iloc[-1][features]
 
+# --- 4. MAIN APPLICATION UI ---
+st.title("🚀 AI-Driven Capital Allocation Advisor")
+st.markdown("**User:** KD | **Client:** Grant Thornton Bharat LLP")
+
+# SIDEBAR
+with st.sidebar:
+    st.header("⚙️ Control Panel")
+    
+    # Input
+    default_tickers = "AAPL, MSFT, GOOGL, TSLA, JPM"
+    tickers_input = st.text_input("Tickers (Comma Separated)", default_tickers)
+    tickers = [t.strip().upper() for t in tickers_input.split(',')]
+    
+    # Constraint
+    max_weight = st.slider("Max Allocation per Asset (%)", 0.1, 1.0, 0.4, 
+                           help="Compliance Rule: No single asset can exceed this %")
+    
+    # Scenario
     st.markdown("---")
+    st.subheader("⚡ Stress Testing (What-If)")
+    scenario_shock = st.select_slider(
+        "Simulate Market Condition:",
+        options=[-20, -10, 0, 10, 20],
+        value=0,
+        format_func=lambda x: f"{x}% Returns (Crash)" if x < 0 else (f"+{x}% Returns (Boom)" if x > 0 else "Neutral")
+    )
     
-    col_l, col_r = st.columns([1.5, 1])
-    with col_l:
-        st.markdown("##### 📅 Projected ROI by Department")
-        if not portfolio.empty:
-            fig_bar = px.bar(
-                portfolio, x="Department", y="Pred_ROI", color="Risk_Score",
-                barmode='group', color_continuous_scale='Tealgrn',
-                text_auto='.1f'
-            )
-            st.plotly_chart(dark_chart(fig_bar), use_container_width=True)
+    run_btn = st.button("Run AI Analysis", type="primary")
+
+if run_btn:
+    start = datetime.date(2023, 1, 1)
+    end = datetime.date.today()
+    
+    with st.spinner('Fetching market data, training AI, and reading news...'):
+        raw_data = fetch_data(tickers, start, end)
+        
+        if raw_data.empty:
+            st.error("No data found. Please check ticker symbols.")
         else:
-            st.info("No projects selected. Increase budget.")
-    
-    with col_r:
-        st.markdown("##### 🥧 Budget Allocation")
-        if not portfolio.empty:
-            fig_pie = px.pie(portfolio, values='Investment_Capital', names='Department', hole=0.6, color_discrete_sequence=px.colors.sequential.Tealgrn_r)
-            st.plotly_chart(dark_chart(fig_pie), use_container_width=True)
-
-# --- TAB 2: AI INSIGHTS ---
-with tab2:
-    st.subheader("🔍 Deep Dive: Why these projects?")
-    
-    c_left, c_right = st.columns(2)
-    
-    with c_left:
-        st.markdown("##### 🔥 Correlation Drivers")
-        corr_matrix = df_prop[features + ["Pred_ROI", "Pred_NPV"]].corr()
-        fig_corr = px.imshow(
-            corr_matrix, text_auto=True, aspect="auto",
-            color_continuous_scale="RdBu_r", zmin=-1, zmax=1
-        )
-        st.plotly_chart(dark_chart(fig_corr), use_container_width=True)
-
-    with c_right:
-        st.markdown("##### 📊 ROI vs Risk Distribution")
-        fig_scat = px.scatter(
-            df_prop, x="Risk_Score", y="Pred_ROI", color="Department",
-            size="Investment_Capital", hover_data=["Project_ID"],
-            title="All Proposals: Risk vs Reward"
-        )
-        st.plotly_chart(dark_chart(fig_scat), use_container_width=True)
-
-# --- TAB 3: EFFICIENT FRONTIER ---
-with tab3:
-    st.subheader("⚡ Efficient Frontier Simulation")
-    st.markdown("Simulating **2,000 Portfolios** to find the optimal Risk-Return trade-off.")
-    
-    if st.button("🔄 Run Simulation"):
-        with st.spinner("Crunching numbers..."):
-            results = []
-            # Smart Sampling
-            total_cap = df_prop["Investment_Capital"].sum()
-            avg_p = min(0.5, budget_input / (total_cap + 1)) 
+            # TABS
+            tab1, tab2, tab3 = st.tabs(["📊 Portfolio Optimization", "🧠 XAI Logic", "📰 Live Sentiment"])
             
-            for _ in range(2000):
-                mask = np.random.rand(len(df_prop)) < avg_p
-                sample = df_prop[mask]
-                if not sample.empty and sample["Investment_Capital"].sum() <= budget_input:
-                    results.append({
-                        "Risk": sample["Risk_Score"].mean(),
-                        "Return": sample["Pred_ROI"].mean(),
-                        "NPV": sample["Pred_NPV"].sum()
-                    })
-            
-            sim_df = pd.DataFrame(results)
-            
-            if not sim_df.empty:
-                fig_ef = px.scatter(
-                    sim_df, x="Risk", y="Return", color="NPV",
-                    labels={"Risk": "Portfolio Risk", "Return": "Portfolio ROI (%)"},
-                    color_continuous_scale="Viridis"
-                )
-                # Add Current Portfolio
-                if not portfolio.empty:
-                    fig_ef.add_trace(go.Scatter(
-                        x=[portfolio["Risk_Score"].mean()], 
-                        y=[portfolio["Pred_ROI"].mean()],
-                        mode='markers', marker=dict(color='red', size=20, symbol='star'),
-                        name="AI Selection"
-                    ))
-                st.plotly_chart(dark_chart(fig_ef), use_container_width=True)
-            else:
-                st.error("Simulation constraint too tight. Check budget.")
+            # --- TAB 1: OPTIMIZATION ---
+            with tab1:
+                st.subheader("Optimal Capital Allocation")
+                
+                # Calculate returns
+                returns = raw_data.pct_change()
+                mean_returns = returns.mean()
+                cov_matrix = returns.cov()
+                
+                # APPLY SCENARIO SHOCK
+                # If scenario is -20%, we reduce expected annual returns by 20%
+                # Since mean_returns is daily, we adjust roughly:
+                if scenario_shock != 0:
+                    shock_factor = scenario_shock / 100.0
+                    # Adjusting mean expectations, not historical data
+                    mean_returns = mean_returns + (shock_factor / 252) 
+                    st.warning(f"⚠️ Simulation Active: Expected returns adjusted by {scenario_shock}%")
 
-# --- TAB 4: OPTIMIZATION REPORT ---
-with tab4:
-    st.subheader("📋 Detailed Selection Report")
-    st.markdown("Projects are ranked by **AI Score** and **Efficiency Ratio**.")
-    
-    display_cols = ["Project_ID", "Department", "Investment_Capital", "Pred_ROI", "Risk_Score", "Efficiency_Ratio"]
-    
-    st.dataframe(
-        portfolio[display_cols]
-        .sort_values("Efficiency_Ratio", ascending=False)
-        .style.background_gradient(subset=["Efficiency_Ratio"], cmap="Greens")
-        .format({"Investment_Capital": "₹{:.0f}", "Pred_ROI": "{:.1f}%", "Efficiency_Ratio": "{:.2f}"}),
-        use_container_width=True,
-        height=500
-    )
-    
-    # Export
-    csv = portfolio.to_csv(index=False).encode('utf-8')
-    st.download_button("📥 Download Report (CSV)", csv, "Optimized_Portfolio.csv", "text/csv")
+                # Optimize
+                opt_results = optimize_portfolio(mean_returns, cov_matrix, max_weight)
+                weights = opt_results.x
+                
+                # Display Results
+                allocation_df = pd.DataFrame({'Ticker': tickers, 'Weight': weights})
+                allocation_df['Weight'] = allocation_df['Weight'].apply(lambda x: round(x, 4))
+                
+                # Filter out near-zero weights for cleaner chart
+                active_allocation = allocation_df[allocation_df['Weight'] > 0.001]
+                
+                col1, col2 = st.columns([1, 2])
+                with col1:
+                    st.dataframe(allocation_df.style.format({"Weight": "{:.2%}"}), use_container_width=True)
+                    st.success(f"Objective: Maximize Sharpe Ratio (Risk-Adjusted Return)")
+                with col2:
+                    fig = px.pie(active_allocation, values='Weight', names='Ticker', 
+                                 title='Recommended Portfolio', hole=0.4)
+                    st.plotly_chart(fig, use_container_width=True)
 
-# --- TAB 5: 3D MAP ---
-with tab5:
-    st.subheader("🧊 Strategic 3D Landscape")
-    
-    df_prop["Status"] = df_prop["Selected"].apply(lambda x: "Selected" if x==1 else "Rejected")
-    
-    fig_3d = px.scatter_3d(
-        df_prop,
-        x="Risk_Score", y="Strategic_Alignment", z="Pred_ROI",
-        color="Status", color_discrete_map={"Selected": "#00e676", "Rejected": "#ff1744"},
-        size="Investment_Capital", opacity=0.9
-    )
-    fig_3d.update_layout(
-        template="plotly_dark",
-        paper_bgcolor="rgba(0,0,0,0)",
-        scene=dict(
-            xaxis=dict(backgroundcolor="rgba(0,0,0,0)"),
-            yaxis=dict(backgroundcolor="rgba(0,0,0,0)"),
-            zaxis=dict(backgroundcolor="rgba(0,0,0,0)")
-        ),
-        margin=dict(l=0, r=0, b=0, t=0)
-    )
-    st.plotly_chart(fig_3d, use_container_width=True)
+            # --- TAB 2: XAI ---
+            with tab2:
+                st.subheader("Explainable AI (Black Box Revealed)")
+                st.write("Why is the model behaving this way? We use Random Forest Feature Importance.")
+                
+                selected_ticker = st.selectbox("Select Asset to Analyze", tickers)
+                
+                # Train small model for explanation
+                if selected_ticker in raw_data.columns:
+                    model, explanation, latest = train_and_explain_ai(raw_data[selected_ticker])
+                    
+                    if model:
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            fig_feat = px.bar(explanation, x='Importance', y='Feature', orientation='h',
+                                              title=f"Drivers for {selected_ticker}")
+                            st.plotly_chart(fig_feat, use_container_width=True)
+                        with c2:
+                            st.write(f"**Latest Indicators for {selected_ticker}:**")
+                            st.json(latest.to_dict())
+                            st.caption("The AI looks at these values to determine stability vs growth potential.")
+                    else:
+                        st.warning("Not enough data to train XAI model.")
 
-# Footer
-st.markdown("---")
-st.markdown(
-    "<div style='text-align: center; color: #94a3b8;'>"
-    "© 2026 CAPITALIQ-AI™ | Developed by KD | Grant Thornton Bharat LLP Live Project"
-    "</div>", 
-    unsafe_allow_html=True
-)
+            # --- TAB 3: SENTIMENT ---
+            with tab3:
+                st.subheader("Real-Time News Analysis")
+                st.write("Fetching latest headlines from Yahoo Finance...")
+                
+                news_cols = st.columns(len(tickers))
+                
+                for i, ticker in enumerate(tickers):
+                    score, headlines = analyze_sentiment_live(ticker)
+                    
+                    with news_cols[i % len(news_cols)]: # Wrap around columns if many tickers
+                        st.markdown(f"#### {ticker}")
+                        
+                        # Sentiment Badge
+                        if score > 0.1:
+                            st.markdown("🟢 **Bullish**")
+                        elif score < -0.1:
+                            st.markdown("🔴 **Bearish**")
+                        else:
+                            st.markdown("⚪ **Neutral**")
+                            
+                        st.metric("Sentiment Score", f"{score:.2f}")
+                        
+                        with st.expander("Show Headlines"):
+                            for h in headlines:
+                                st.markdown(f"- {h}")
+
+else:
+    st.info("👈 Please enter tickers and click 'Run AI Analysis' to start.")

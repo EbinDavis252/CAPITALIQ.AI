@@ -1,8 +1,8 @@
 streamlit
-yfinance
 pandas
 numpy
 scipy
 scikit-learn
 plotly
-textblob
+seaborn
+matplotlib

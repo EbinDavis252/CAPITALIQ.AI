@@ -3,291 +3,282 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import MinMaxScaler
 from scipy.optimize import linprog
 
 # ----------------------------------------------------
-# 1. Page Configuration & Styling
+# 1. Page Configuration & Professional Styling
 # ----------------------------------------------------
 st.set_page_config(
-    page_title="CAPITALIQ-AI™ | Grant Thornton Live Project",
+    page_title="CAPITALIQ-AI™ | Strategic Allocation",
     layout="wide",
-    page_icon="📊"
+    page_icon="📈",
+    initial_sidebar_state="expanded"
 )
 
-# Custom CSS for Professional Look
+# Custom CSS for Background & Enterprise Look
 st.markdown("""
     <style>
-    .block-container {padding-top: 2rem;}
-    .metric-card {
-        background-color: #f8f9fa;
-        border: 1px solid #e9ecef;
-        padding: 15px;
-        border-radius: 8px;
-        text-align: center;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    /* Background Image */
+    .stApp {
+        background-image: linear_gradient(rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0.9)), 
+                          url('https://images.unsplash.com/photo-1611974765270-ca1258634369?q=80&w=2070&auto=format&fit=crop');
+        background-size: cover;
+        background-position: center;
+        background-attachment: fixed;
     }
-    h1, h2, h3 {color: #2c3e50;}
+    
+    /* Typography & Colors */
+    h1, h2, h3 {
+        color: #ffffff !important;
+        font-family: 'Helvetica Neue', sans-serif;
+    }
+    .stMarkdown p {
+        color: #e0e0e0 !important;
+    }
+    .stDataFrame {
+        background-color: rgba(255, 255, 255, 0.05);
+    }
+    
+    /* Metric Cards */
+    div[data-testid="stMetricValue"] {
+        color: #00CC96 !important;
+        font-size: 28px !important;
+    }
+    div[data-testid="stMetricLabel"] {
+        color: #a0a0a0 !important;
+    }
+    
+    /* Sidebar Styling */
+    section[data-testid="stSidebar"] {
+        background-color: #111827;
+        border-right: 1px solid #374151;
+    }
     </style>
 """, unsafe_allow_html=True)
 
 # ----------------------------------------------------
-# 2. Sidebar: Configuration & Controls
+# 2. Sidebar: Global Strategy Controls
 # ----------------------------------------------------
 with st.sidebar:
-    st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/c/c3/Python_logo_notext.svg/121px-Python_logo_notext.svg.png", width=50)
-    st.title("CAPITALIQ-AI™")
-    st.caption("AI-Driven Capital Allocation System")
+    st.title("⚡ CAPITALIQ-AI™")
+    st.caption("Strategic Decision Support System")
     st.markdown("---")
     
-    st.subheader("1. Data Ingestion")
-    hist_file = st.file_uploader("📂 Upload Historical Data (Training)", type=["csv"], help="Upload 'grant_thornton_project_data.csv'")
-    prop_file = st.file_uploader("📂 Upload New Proposals (Forecasting)", type=["csv"], help="Upload 'new_project_proposals.csv'")
+    st.subheader("1. Data Intelligence")
+    hist_file = st.file_uploader("📂 Historical Data (Train)", type=["csv"])
+    prop_file = st.file_uploader("📂 New Proposals (Predict)", type=["csv"])
     
     st.markdown("---")
-    st.subheader("2. Constraints")
-    
-    # We will update the default budget dynamically if data is loaded
-    budget_input = st.number_input("💰 Total Capital Budget (₹)", value=15000000.0, step=500000.0)
-    
-    max_risk = st.slider("⚠️ Max Portfolio Risk Tolerance", 1.0, 10.0, 6.5, help="Maximum acceptable average risk score (1-10) for the portfolio.")
+    st.subheader("2. Strategic Constraints")
+    budget_input = st.number_input("💰 Capital Budget (₹)", value=15000000.0, step=1000000.0)
+    max_risk = st.slider("⚠️ Max Portfolio Risk", 1.0, 10.0, 6.5)
     
     st.markdown("---")
-    st.info("**Project:** Capital Allocation Advisor\n**Client:** Live Project (GT)")
+    st.subheader("3. Scenario Manager")
+    market_shock = st.slider("📉 Market Shock Factor", -0.20, 0.20, 0.0, 0.01, help="Simulate a market crash (-20%) or boom (+20%)")
+    
+    st.markdown("---")
+    st.info("Live Project: Grant Thornton Bharat LLP")
 
 # ----------------------------------------------------
-# 3. Main Dashboard Logic
+# 3. Main Application Logic
 # ----------------------------------------------------
-st.title("📊 Executive Decision Support System")
-st.markdown("### Intelligent Capital Allocation & Portfolio Optimization")
-st.markdown("This system utilizes **Random Forest Regression** for forecasting and **Linear Programming** for budget optimization.")
+st.title("📈 Executive Capital Command Center")
+st.markdown("_AI-Powered Analytics for High-Stakes Investment Decisions_")
 
 if hist_file is None or prop_file is None:
-    st.warning("⚠️ **Action Required:** Please upload both **Historical Data** and **New Proposals** in the sidebar to begin analysis.")
-    st.info("💡 **Tip:** Use the datasets generated/provided in the chat.")
+    st.warning("⚠️ **System Standby:** Please upload project data to initialize the Strategic Engine.")
     st.stop()
 
 # Load Data
 @st.cache_data
-def load_data(h_file, p_file):
-    df_h = pd.read_csv(h_file)
-    df_p = pd.read_csv(p_file)
-    return df_h, df_p
+def load_data(h, p):
+    return pd.read_csv(h), pd.read_csv(p)
 
 df_hist, df_prop = load_data(hist_file, prop_file)
 
 # ----------------------------------------------------
-# 4. Machine Learning Engine
+# 4. Advanced ML Pipeline
 # ----------------------------------------------------
-# Define Features and Targets
 features = ["Investment_Capital", "Duration_Months", "Risk_Score", "Strategic_Alignment", "Market_Trend_Index"]
-target_roi = "Actual_ROI_Pct"
-target_npv = "Actual_NPV"
+targets = ["Actual_ROI_Pct", "Actual_NPV"]
 
-# Check if columns exist
-required_hist_cols = features + [target_roi, target_npv]
-if not all(col in df_hist.columns for col in required_hist_cols):
-    st.error(f"❌ Historical Data missing required columns. Expected: {required_hist_cols}")
-    st.stop()
-
-required_prop_cols = features
-if not all(col in df_prop.columns for col in required_prop_cols):
-    st.error(f"❌ Proposals Data missing required columns. Expected: {required_prop_cols}")
+# Validate Columns
+if not all(c in df_hist.columns for c in features + targets):
+    st.error("❌ Data Schema Mismatch. Please check column headers.")
     st.stop()
 
 # Train Models
-with st.spinner('🧠 Training AI Models on Historical Data...'):
+with st.spinner('⚙️ Calibrating AI Models...'):
     rf_roi = RandomForestRegressor(n_estimators=200, random_state=42)
     rf_npv = RandomForestRegressor(n_estimators=200, random_state=42)
     
-    X_train = df_hist[features]
-    y_roi = df_hist[target_roi]
-    y_npv = df_hist[target_npv]
-    
-    rf_roi.fit(X_train, y_roi)
-    rf_npv.fit(X_train, y_npv)
+    rf_roi.fit(df_hist[features], df_hist["Actual_ROI_Pct"])
+    rf_npv.fit(df_hist[features], df_hist["Actual_NPV"])
 
-# Predict on New Proposals
-df_prop["Pred_ROI"] = rf_roi.predict(df_prop[features])
-df_prop["Pred_NPV"] = rf_npv.predict(df_prop[features])
-
-st.success("✅ AI Training Complete. Forecasting generated for new proposals.")
+# Prediction with Scenario Adjustment
+df_prop["Pred_ROI"] = rf_roi.predict(df_prop[features]) * (1 + market_shock) # Apply Market Shock
+df_prop["Pred_NPV"] = rf_npv.predict(df_prop[features]) * (1 + market_shock) # Apply Market Shock
 
 # ----------------------------------------------------
-# 5. Interface Tabs
+# 5. Advanced Optimization Engine
 # ----------------------------------------------------
-tab1, tab2, tab3, tab4 = st.tabs([
-    "📈 Forecast & Strategy", 
-    "⚖️ Portfolio Optimization", 
-    "🎲 Risk Simulation (Monte Carlo)",
-    "🧊 3D Strategic View"
+# Linear Programming (Knapsack Problem)
+c = -df_prop["Pred_NPV"].values 
+A = [df_prop["Investment_Capital"].values]
+b = [budget_input]
+bounds = [(0, 1) for _ in range(len(df_prop))]
+
+res = linprog(c, A_ub=A, b_ub=b, bounds=bounds, method='highs')
+df_prop["Selected"] = res.x.round(0) if res.success else 0
+portfolio = df_prop[df_prop["Selected"] == 1]
+
+# ----------------------------------------------------
+# 6. Enterprise Dashboard Tabs
+# ----------------------------------------------------
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "📊 Executive Summary", 
+    "🧠 Advanced Analytics",
+    "⚡ Efficient Frontier", 
+    "💰 Optimization Details",
+    "🧊 Strategic 3D View"
 ])
 
-# --- TAB 1: FORECAST & STRATEGY ---
+# --- TAB 1: EXECUTIVE SUMMARY ---
 with tab1:
-    st.subheader("🔍 Project Valuation & AI Forecasting")
+    st.subheader("📌 Portfolio Performance at a Glance")
     
-    # KPIs
+    # Hero Metrics
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total Proposals", len(df_prop))
-    c2.metric("Total Capital Requested", f"₹{df_prop['Investment_Capital'].sum():,.0f}")
-    c3.metric("Avg Predicted ROI", f"{df_prop['Pred_ROI'].mean():.2f}%")
-    c4.metric("Avg Predicted NPV", f"₹{df_prop['Pred_NPV'].mean():,.0f}")
-    
-    st.markdown("#### AI Feature Importance (What drives success?)")
-    st.caption("The chart below shows which factors the AI model found most important when predicting ROI based on historical data.")
-    
-    # Feature Importance Plot
-    col_chart, col_data = st.columns([2, 1])
-    
-    with col_chart:
-        imp_df = pd.DataFrame({
-            "Feature": features,
-            "Importance": rf_roi.feature_importances_
-        }).sort_values("Importance", ascending=True)
-        
-        fig_imp = px.bar(
-            imp_df, x="Importance", y="Feature", orientation='h', 
-            title="Feature Importance (ROI Model)",
-            color="Importance", color_continuous_scale="Blues",
-            text_auto='.2f'
-        )
-        st.plotly_chart(fig_imp, use_container_width=True)
-    
-    with col_data:
-        st.markdown("**Top 5 High-Value Proposals**")
-        st.dataframe(
-            df_prop[["Project_ID", "Department", "Pred_NPV"]].sort_values("Pred_NPV", ascending=False).head(5).style.format({"Pred_NPV": "₹{:.0f}"}),
-            use_container_width=True,
-            hide_index=True
-        )
+    c1.metric("Projects Funded", f"{len(portfolio)}", f"out of {len(df_prop)}")
+    c2.metric("Capital Deployed", f"₹{portfolio['Investment_Capital'].sum()/1e6:.1f}M", f"Budget: ₹{budget_input/1e6:.1f}M")
+    c3.metric("Projected NPV", f"₹{portfolio['Pred_NPV'].sum()/1e6:.2f}M", delta=f"{market_shock*100:+.0f}% Market Adj")
+    c4.metric("Risk Profile", f"{portfolio['Risk_Score'].mean():.2f}", delta_color="inverse", delta="vs Max 6.5")
 
-# --- TAB 2: OPTIMIZATION ---
+    st.divider()
+    
+    # Dual Charts
+    col_l, col_r = st.columns([1.5, 1])
+    with col_l:
+        st.markdown("##### 📅 ROI Forecast by Department")
+        fig_bar = px.bar(
+            portfolio, x="Department", y="Pred_ROI", color="Risk_Score",
+            title="Avg ROI per Dept (colored by Risk)", barmode='group',
+            color_continuous_scale='Redor'
+        )
+        fig_bar.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color='white')
+        st.plotly_chart(fig_bar, use_container_width=True)
+    
+    with col_r:
+        st.markdown("##### 🥧 Capital Allocation")
+        fig_pie = px.pie(portfolio, values='Investment_Capital', names='Department', hole=0.5)
+        fig_pie.update_layout(paper_bgcolor='rgba(0,0,0,0)', font_color='white')
+        st.plotly_chart(fig_pie, use_container_width=True)
+
+# --- TAB 2: ADVANCED ANALYTICS ---
 with tab2:
-    st.subheader("💰 Constrained Capital Optimization (Linear Programming)")
-    st.markdown(f"""
-    **Optimization Goal:** Maximize Total Portfolio NPV  
-    **Hard Constraint:** Total Cost ≤ ₹{budget_input:,.0f}
-    """)
+    st.subheader("🔍 Deep Dive: Correlations & Drivers")
     
-    # Optimization Logic
-    # 1. Variables: x (binary vector, 1=select, 0=reject)
-    # 2. Objective Function: Maximize sum(NPV * x) -> Minimize sum(-NPV * x)
-    # 3. Constraint: sum(Cost * x) <= Budget
+    c_left, c_right = st.columns(2)
     
-    c = -df_prop["Pred_NPV"].values # Negative because linprog minimizes
-    A = [df_prop["Investment_Capital"].values]
-    b = [budget_input]
-    bounds = [(0, 1) for _ in range(len(df_prop))]
-    
-    # Solve
-    res = linprog(c, A_ub=A, b_ub=b, bounds=bounds, method='highs')
-    
-    if res.success:
-        df_prop["Selected"] = res.x.round(0)
-        portfolio = df_prop[df_prop["Selected"] == 1]
+    with c_left:
+        st.markdown("##### 🔥 Correlation Heatmap")
+        st.caption("How do features interact? (e.g., Does high Risk actually yield high ROI?)")
         
-        # Portfolio Stats
-        p_cost = portfolio["Investment_Capital"].sum()
-        p_npv = portfolio["Pred_NPV"].sum()
-        p_risk = portfolio["Risk_Score"].mean()
-        p_roi = portfolio["Pred_ROI"].mean()
-        
-        # Display Results
-        k1, k2, k3, k4 = st.columns(4)
-        k1.metric("Projects Selected", f"{len(portfolio)} / {len(df_prop)}")
-        k2.metric("Capital Utilized", f"₹{p_cost:,.0f}", f"{p_cost/budget_input*100:.1f}% Utilized")
-        k3.metric("Optimized NPV", f"₹{p_npv:,.0f}")
-        k4.metric("Portfolio Risk", f"{p_risk:.2f}", delta_color="inverse" if p_risk > max_risk else "normal")
-        
-        if p_risk > max_risk:
-            st.warning(f"⚠️ **Risk Alert:** The optimized portfolio risk ({p_risk:.2f}) exceeds your tolerance ({max_risk}). Consider manually rejecting high-risk projects or adjusting the budget.")
-        else:
-            st.success("✅ Portfolio is within risk tolerance levels.")
-        
-        st.divider()
-        
-        # Visuals
-        row1_col1, row1_col2 = st.columns(2)
-        with row1_col1:
-            fig_pie = px.pie(portfolio, values='Investment_Capital', names='Department', title="Optimized Budget Allocation by Department", hole=0.4)
-            st.plotly_chart(fig_pie, use_container_width=True)
-            
-        with row1_col2:
-            # ROI vs NPV Scatter for selected projects
-            fig_scatter = px.scatter(
-                portfolio, x="Pred_ROI", y="Pred_NPV", size="Investment_Capital", color="Department",
-                title="Selected Projects: ROI vs NPV", hover_data=["Project_ID"]
-            )
-            st.plotly_chart(fig_scatter, use_container_width=True)
-            
-        st.markdown("### 📋 Detailed Allocation Table")
-        st.dataframe(
-            portfolio[["Project_ID", "Department", "Investment_Capital", "Pred_ROI", "Pred_NPV", "Risk_Score", "Strategic_Alignment"]]
-            .style.format({"Investment_Capital": "₹{:.0f}", "Pred_ROI": "{:.2f}%", "Pred_NPV": "₹{:.0f}"}),
-            use_container_width=True
+        # Compute Correlation
+        corr_matrix = df_prop[features + ["Pred_ROI", "Pred_NPV"]].corr()
+        fig_corr = px.imshow(
+            corr_matrix, text_auto=True, aspect="auto",
+            color_continuous_scale="RdBu_r", zmin=-1, zmax=1
         )
-            
-    else:
-        st.error("Optimization failed. Constraints might be too tight or data issue.")
+        fig_corr.update_layout(paper_bgcolor='rgba(0,0,0,0)', font_color='white')
+        st.plotly_chart(fig_corr, use_container_width=True)
 
-# --- TAB 3: MONTE CARLO ---
+    with c_right:
+        st.markdown("##### 📊 Distribution of Predicted Returns")
+        fig_dist = px.histogram(
+            df_prop, x="Pred_ROI", nbins=20, color="Department",
+            title="ROI Distribution across all Proposals",
+            marginal="box" # Adds a boxplot on top
+        )
+        fig_dist.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color='white')
+        st.plotly_chart(fig_dist, use_container_width=True)
+
+# --- TAB 3: EFFICIENT FRONTIER ---
 with tab3:
-    st.subheader("🎲 Monte Carlo Simulation: Value at Risk (VaR)")
-    st.markdown("Simulating **1,000 market scenarios** to stress-test the Optimized Portfolio.")
+    st.subheader("⚡ Efficient Frontier Analysis")
+    st.markdown("Simulating **2,000 Random Portfolios** to visualize the Risk-Return Trade-off.")
     
-    if 'portfolio' in locals() and not portfolio.empty:
-        iterations = 1000
-        sim_results = []
-        
-        # Assumption: NPV can fluctuate by +/- 20% due to market volatility
-        volatility = 0.20
-        base_total_npv = portfolio["Pred_NPV"].sum()
-        
-        for _ in range(iterations):
-            shock = np.random.normal(0, volatility) # Normal distribution shock
-            simulated_npv = base_total_npv * (1 + shock)
-            sim_results.append(simulated_npv)
+    if st.button("🔄 Run Efficient Frontier Simulation"):
+        with st.spinner("Simulating market scenarios..."):
+            results = []
+            for _ in range(2000):
+                # Randomly select projects
+                mask = np.random.rand(len(df_prop)) > 0.5
+                sample = df_prop[mask]
+                
+                if sample["Investment_Capital"].sum() <= budget_input:
+                    results.append({
+                        "Risk": sample["Risk_Score"].mean(),
+                        "Return": sample["Pred_ROI"].mean(),
+                        "NPV": sample["Pred_NPV"].sum(),
+                        "Count": len(sample)
+                    })
             
-        # Plot Distribution
-        fig_hist = px.histogram(
-            x=sim_results, nbins=50, 
-            title="Probability Distribution of Portfolio Returns",
-            labels={'x': 'Total Portfolio NPV (₹)'},
-            color_discrete_sequence=['#2ecc71']
-        )
-        
-        # Calculate VaR (5th percentile)
-        var_95 = np.percentile(sim_results, 5)
-        
-        fig_hist.add_vline(x=base_total_npv, line_dash="dash", line_color="black", annotation_text="Expected NPV")
-        fig_hist.add_vline(x=var_95, line_dash="dash", line_color="red", annotation_text="95% VaR")
-        fig_hist.update_layout(showlegend=False)
-        
-        st.plotly_chart(fig_hist, use_container_width=True)
-        
-        st.error(f"""
-        **Risk Insight (VaR 95%):**
-        While the Expected NPV is **₹{base_total_npv:,.0f}**, there is a 5% chance that due to adverse market conditions, 
-        the portfolio value could drop to **₹{var_95:,.0f}**.
-        """)
-        
-    else:
-        st.info("⚠️ Please run the Optimization in the 'Portfolio Optimization' tab first to generate a portfolio for simulation.")
+            sim_df = pd.DataFrame(results)
+            
+            # Plot
+            fig_ef = px.scatter(
+                sim_df, x="Risk", y="Return", color="NPV",
+                title="Efficient Frontier: Risk vs Return",
+                labels={"Risk": "Portfolio Risk (Avg)", "Return": "Portfolio ROI (%)"},
+                color_continuous_scale="Viridis",
+                hover_data=["Count"]
+            )
+            
+            # Mark Current Optimized Portfolio
+            current_risk = portfolio["Risk_Score"].mean()
+            current_return = portfolio["Pred_ROI"].mean()
+            
+            fig_ef.add_trace(go.Scatter(
+                x=[current_risk], y=[current_return],
+                mode='markers+text', marker=dict(color='red', size=15, symbol='star'),
+                text=["AI Optimized"], textposition="top center", name="Selected"
+            ))
+            
+            fig_ef.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color='white')
+            st.plotly_chart(fig_ef, use_container_width=True)
 
-# --- TAB 4: 3D VISUAL ---
+# --- TAB 4: OPTIMIZATION DETAILS ---
 with tab4:
-    st.subheader("🧊 Strategic Risk-Return Landscape")
+    st.subheader("📋 Detailed Selection Report")
     
-    # We plot ALL proposals, and highlight selected ones
-    if "Selected" in df_prop.columns:
-        df_prop["Status"] = df_prop["Selected"].apply(lambda x: "Selected" if x==1 else "Rejected") 
-        color_map = {"Selected": "#00CC96", "Rejected": "#EF553B"}
-    else:
-        df_prop["Status"] = "Pending"
-        color_map = {"Pending": "grey"}
+    st.dataframe(
+        portfolio[["Project_ID", "Department", "Investment_Capital", "Pred_ROI", "Pred_NPV", "Risk_Score", "Strategic_Alignment"]]
+        .style.background_gradient(subset=["Pred_NPV"], cmap="Greens")
+        .format({"Investment_Capital": "₹{:.0f}", "Pred_ROI": "{:.2f}%", "Pred_NPV": "₹{:.0f}"}),
+        use_container_width=True
+    )
+    
+    # Download Button
+    csv = portfolio.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="📥 Download Portfolio Report (CSV)",
+        data=csv,
+        file_name="GrantThornton_Optimized_Portfolio.csv",
+        mime="text/csv",
+    )
+
+# --- TAB 5: 3D STRATEGIC VIEW ---
+with tab5:
+    st.subheader("🧊 Multi-Dimensional Strategy Map")
+    
+    df_prop["Status"] = df_prop["Selected"].apply(lambda x: "Selected" if x==1 else "Rejected")
     
     fig_3d = px.scatter_3d(
         df_prop,
@@ -295,15 +286,23 @@ with tab4:
         y="Strategic_Alignment",
         z="Pred_ROI",
         color="Status",
-        color_discrete_map=color_map,
+        color_discrete_map={"Selected": "#00CC96", "Rejected": "#EF553B"},
         size="Investment_Capital",
-        hover_data=["Project_ID", "Department"],
-        title="Strategy (Y) vs Risk (X) vs ROI (Z)",
-        opacity=0.8
+        opacity=0.9,
+        title="Risk (X) vs Strategy (Y) vs ROI (Z)"
     )
-    
-    fig_3d.update_layout(margin=dict(l=0, r=0, b=0, t=0), height=600)
+    fig_3d.update_layout(
+        scene = dict(
+            xaxis = dict(backgroundcolor="rgb(0, 0, 0)", gridcolor="gray", showbackground=True),
+            yaxis = dict(backgroundcolor="rgb(0, 0, 0)", gridcolor="gray", showbackground=True),
+            zaxis = dict(backgroundcolor="rgb(0, 0, 0)", gridcolor="gray", showbackground=True),
+        ),
+        paper_bgcolor='rgba(0,0,0,0)', 
+        font_color='white',
+        margin=dict(l=0, r=0, b=0, t=0)
+    )
     st.plotly_chart(fig_3d, use_container_width=True)
 
+# Footer
 st.markdown("---")
-st.caption("© 2026 CAPITALIQ-AI™ | Grant Thornton Bharat LLP | Master's Project | Developed by KD")
+st.caption("© 2026 CAPITALIQ-AI™ | Developed by KD | Grant Thornton Bharat LLP Live Project")

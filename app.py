@@ -166,19 +166,23 @@ with tab1:
     col_l, col_r = st.columns([1.5, 1])
     with col_l:
         st.markdown("##### 📅 ROI Forecast by Department")
-        fig_bar = px.bar(
-            portfolio, x="Department", y="Pred_ROI", color="Risk_Score",
-            title="Avg ROI per Dept (colored by Risk)", barmode='group',
-            color_continuous_scale='Redor'
-        )
-        fig_bar.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color='white')
-        st.plotly_chart(fig_bar, use_container_width=True)
+        if not portfolio.empty:
+            fig_bar = px.bar(
+                portfolio, x="Department", y="Pred_ROI", color="Risk_Score",
+                title="Avg ROI per Dept (colored by Risk)", barmode='group',
+                color_continuous_scale='Redor'
+            )
+            fig_bar.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color='white')
+            st.plotly_chart(fig_bar, use_container_width=True)
+        else:
+            st.info("No projects selected. Increase budget or check constraints.")
     
     with col_r:
         st.markdown("##### 🥧 Capital Allocation")
-        fig_pie = px.pie(portfolio, values='Investment_Capital', names='Department', hole=0.5)
-        fig_pie.update_layout(paper_bgcolor='rgba(0,0,0,0)', font_color='white')
-        st.plotly_chart(fig_pie, use_container_width=True)
+        if not portfolio.empty:
+            fig_pie = px.pie(portfolio, values='Investment_Capital', names='Department', hole=0.5)
+            fig_pie.update_layout(paper_bgcolor='rgba(0,0,0,0)', font_color='white')
+            st.plotly_chart(fig_pie, use_container_width=True)
 
 # --- TAB 2: ADVANCED ANALYTICS ---
 with tab2:
@@ -217,12 +221,19 @@ with tab3:
     if st.button("🔄 Run Efficient Frontier Simulation"):
         with st.spinner("Simulating market scenarios..."):
             results = []
+            
+            # --- FIX: Smart Sampling Logic ---
+            # Calculate what % of projects we can afford on average
+            total_market_cap = df_prop["Investment_Capital"].sum()
+            avg_affordability = min(0.5, budget_input / (total_market_cap + 1)) 
+            
             for _ in range(2000):
-                # Randomly select projects
-                mask = np.random.rand(len(df_prop)) > 0.5
+                # Randomly select projects based on affordability
+                mask = np.random.rand(len(df_prop)) < avg_affordability 
                 sample = df_prop[mask]
                 
-                if sample["Investment_Capital"].sum() <= budget_input:
+                # Check if this random portfolio fits the budget AND has at least 1 project
+                if not sample.empty and sample["Investment_Capital"].sum() <= budget_input:
                     results.append({
                         "Risk": sample["Risk_Score"].mean(),
                         "Return": sample["Pred_ROI"].mean(),
@@ -232,27 +243,31 @@ with tab3:
             
             sim_df = pd.DataFrame(results)
             
-            # Plot
-            fig_ef = px.scatter(
-                sim_df, x="Risk", y="Return", color="NPV",
-                title="Efficient Frontier: Risk vs Return",
-                labels={"Risk": "Portfolio Risk (Avg)", "Return": "Portfolio ROI (%)"},
-                color_continuous_scale="Viridis",
-                hover_data=["Count"]
-            )
-            
-            # Mark Current Optimized Portfolio
-            current_risk = portfolio["Risk_Score"].mean()
-            current_return = portfolio["Pred_ROI"].mean()
-            
-            fig_ef.add_trace(go.Scatter(
-                x=[current_risk], y=[current_return],
-                mode='markers+text', marker=dict(color='red', size=15, symbol='star'),
-                text=["AI Optimized"], textposition="top center", name="Selected"
-            ))
-            
-            fig_ef.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color='white')
-            st.plotly_chart(fig_ef, use_container_width=True)
+            if not sim_df.empty:
+                # Plot
+                fig_ef = px.scatter(
+                    sim_df, x="Risk", y="Return", color="NPV",
+                    title="Efficient Frontier: Risk vs Return",
+                    labels={"Risk": "Portfolio Risk (Avg)", "Return": "Portfolio ROI (%)"},
+                    color_continuous_scale="Viridis",
+                    hover_data=["Count"]
+                )
+                
+                # Mark Current Optimized Portfolio
+                if not portfolio.empty:
+                    current_risk = portfolio["Risk_Score"].mean()
+                    current_return = portfolio["Pred_ROI"].mean()
+                    
+                    fig_ef.add_trace(go.Scatter(
+                        x=[current_risk], y=[current_return],
+                        mode='markers+text', marker=dict(color='red', size=15, symbol='star'),
+                        text=["AI Optimized"], textposition="top center", name="Selected"
+                    ))
+                
+                fig_ef.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color='white')
+                st.plotly_chart(fig_ef, use_container_width=True)
+            else:
+                st.error("⚠️ Simulation could not find valid portfolios. Try increasing the Budget or reducing Project Costs.")
 
 # --- TAB 4: OPTIMIZATION DETAILS ---
 with tab4:

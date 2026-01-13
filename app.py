@@ -16,10 +16,10 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- THEME ENGINE ---
+# --- THEME ENGINE: GLASSMORPHISM & HIGH CONTRAST ---
 st.markdown("""
     <style>
-    /* 1. Global Background */
+    /* 1. Global Background (Dark Luxury) */
     .stApp {
         background-image: linear_gradient(rgba(15, 23, 42, 0.9), rgba(15, 23, 42, 0.95)), 
                           url('https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=80&w=2070&auto=format&fit=crop');
@@ -27,7 +27,7 @@ st.markdown("""
         background-attachment: fixed;
     }
 
-    /* 2. Text & Font Settings */
+    /* 2. Text Visibility Fixes (Force White) */
     h1, h2, h3, h4, h5, h6, .stMarkdown, p, li, span, label, .stDataFrame, .stRadio label {
         color: #e2e8f0 !important;
         font-family: 'Inter', sans-serif;
@@ -48,7 +48,7 @@ st.markdown("""
         border-right: 1px solid #334155;
     }
     
-    /* 5. Custom Radio Button */
+    /* 5. Custom Radio Button (Navigation) */
     div[role="radiogroup"] > label > div:first-of-type {
         background-color: #0f172a;
     }
@@ -56,13 +56,14 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ----------------------------------------------------
-# 2. Sidebar: Navigation & Controls
+# 2. Sidebar: Navigation & Strategy Controls
 # ----------------------------------------------------
 with st.sidebar:
     st.title("💎 CAPITALIQ-AI™")
     st.caption("Advanced Decision Support System")
     st.markdown("---")
     
+    # --- A. NAVIGATION (Replaces Tabs) ---
     st.subheader("📍 Navigation")
     selected_page = st.radio(
         "Go to:", 
@@ -72,45 +73,50 @@ with st.sidebar:
     
     st.markdown("---")
     
+    # --- B. STRATEGIC CONSTRAINTS ---
     st.subheader("⚙️ Strategic Constraints")
     budget_input = st.number_input("💰 Capital Budget (₹)", value=15000000.0, step=1000000.0)
     max_risk = st.slider("⚠️ Max Portfolio Risk", 1.0, 10.0, 6.5)
     
     st.markdown("---")
     
+    # --- C. MARKET SIMULATOR ---
     st.subheader("📉 Market Simulator")
     market_shock = st.slider("Market Shock Factor", -0.20, 0.20, 0.0, 0.01, format="%+.0f%%")
     
     st.info("Live Project: Grant Thornton Bharat LLP")
 
 # ----------------------------------------------------
-# 3. Main Page: Single Master File Upload
+# 3. Main Page: Data Ingestion (Moved Here)
 # ----------------------------------------------------
 st.title("📊 Executive Capital Command Center")
 
-# --- DATA UPLOAD SECTION ---
-with st.expander("📂 Data Initialization (Master Record)", expanded=True):
-    uploaded_file = st.file_uploader("Upload 'master_project_data.csv' (Contains History & Proposals)", type=["csv"])
+# --- DATA UPLOAD SECTION (Expanded by default until data is loaded) ---
+with st.expander("📂 Data Initialization & Configuration", expanded=True):
+    col_u1, col_u2 = st.columns(2)
+    with col_u1:
+        hist_file = st.file_uploader("1. Upload Historical Data (Train)", type=["csv"])
+    with col_u2:
+        prop_file = st.file_uploader("2. Upload New Proposals (Predict)", type=["csv"])
 
-    if uploaded_file is None:
-        st.warning("⚠️ **System Standby:** Please upload the Master Dataset to proceed.")
-        st.stop()
+    # Quick check to stop execution if data is missing
+    if hist_file is None or prop_file is None:
+        st.warning("⚠️ **System Standby:** Awaiting Data Streams...")
+        st.stop() # Stops the script here until files are present
 
-# ----------------------------------------------------
-# 4. Data Processing & AI Pipeline
-# ----------------------------------------------------
+# Load Data
 @st.cache_data
-def process_data(file):
-    df = pd.read_csv(file)
-    # SPLIT LOGIC: Separating History (Train) from Proposals (Predict)
-    train = df[df['Type'] == 'History'].copy()
-    predict = df[df['Type'] == 'Proposal'].copy()
-    return train, predict
+def load_data(h, p):
+    return pd.read_csv(h), pd.read_csv(p)
 
-df_hist, df_prop = process_data(uploaded_file)
+df_hist, df_prop = load_data(hist_file, prop_file)
 
+# ----------------------------------------------------
+# 4. Advanced ML Pipeline (Runs regardless of page selection)
+# ----------------------------------------------------
 features = ["Investment_Capital", "Duration_Months", "Risk_Score", "Strategic_Alignment", "Market_Trend_Index"]
 
+# Train Models
 with st.spinner('⚙️ Calibrating AI Models & Optimizing Portfolio...'):
     rf_roi = RandomForestRegressor(n_estimators=200, random_state=42)
     rf_npv = RandomForestRegressor(n_estimators=200, random_state=42)
@@ -119,25 +125,26 @@ with st.spinner('⚙️ Calibrating AI Models & Optimizing Portfolio...'):
         rf_roi.fit(df_hist[features], df_hist["Actual_ROI_Pct"])
         rf_npv.fit(df_hist[features], df_hist["Actual_NPV"])
     except Exception as e:
-        st.error(f"❌ Data Structure Error: {e}")
+        st.error(f"Data Mismatch Error: {e}")
         st.stop()
 
-    # Predictions
+    # Prediction with Scenario Adjustment
     df_prop["Pred_ROI"] = rf_roi.predict(df_prop[features]) * (1 + market_shock)
     df_prop["Pred_NPV"] = rf_npv.predict(df_prop[features]) * (1 + market_shock)
     df_prop["Efficiency_Ratio"] = df_prop["Pred_ROI"] / df_prop["Risk_Score"]
 
-    # Optimization
+    # Optimization Engine
     c = -df_prop["Pred_NPV"].values 
     A = [df_prop["Investment_Capital"].values]
     b = [budget_input]
     bounds = [(0, 1) for _ in range(len(df_prop))]
 
+    # Using 'highs' method for robustness
     res = linprog(c, A_ub=A, b_ub=b, bounds=bounds, method='highs')
     df_prop["Selected"] = res.x.round(0) if res.success else 0
     portfolio = df_prop[df_prop["Selected"] == 1]
 
-# Common Plotly Layout
+# Common Plotly Layout for Dark Theme
 def dark_chart(fig):
     fig.update_layout(
         template="plotly_dark",
@@ -148,13 +155,14 @@ def dark_chart(fig):
     return fig
 
 # ----------------------------------------------------
-# 5. Dynamic Page Views
+# 5. Dynamic Page Rendering (Based on Sidebar Selection)
 # ----------------------------------------------------
 
 # --- PAGE 1: EXECUTIVE SUMMARY ---
 if selected_page == "🚀 Executive Summary":
     st.subheader("📌 Portfolio Performance Snapshot")
     
+    # Hero Metrics
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Projects Funded", f"{len(portfolio)}", f"out of {len(df_prop)}")
     c2.metric("Capital Deployed", f"₹{portfolio['Investment_Capital'].sum()/1e6:.1f}M", f"Limit: ₹{budget_input/1e6:.1f}M")
@@ -187,6 +195,7 @@ elif selected_page == "🧠 AI Insights":
     st.subheader("🔍 Deep Dive: Why these projects?")
     
     c_left, c_right = st.columns(2)
+    
     with c_left:
         st.markdown("##### 🔥 Correlation Drivers")
         corr_matrix = df_prop[features + ["Pred_ROI", "Pred_NPV"]].corr()
@@ -234,6 +243,7 @@ elif selected_page == "⚡ Efficient Frontier":
                     labels={"Risk": "Portfolio Risk", "Return": "Portfolio ROI (%)"},
                     color_continuous_scale="Viridis"
                 )
+                # Add Current Portfolio Marker
                 if not portfolio.empty:
                     fig_ef.add_trace(go.Scatter(
                         x=[portfolio["Risk_Score"].mean()], 
@@ -248,6 +258,7 @@ elif selected_page == "⚡ Efficient Frontier":
 # --- PAGE 4: OPTIMIZATION REPORT ---
 elif selected_page == "💰 Optimization Report":
     st.subheader("📋 Detailed Selection Report")
+    st.markdown("Projects are ranked by **AI Score** and **Efficiency Ratio**.")
     
     display_cols = ["Project_ID", "Department", "Investment_Capital", "Pred_ROI", "Risk_Score", "Efficiency_Ratio"]
     
@@ -260,6 +271,7 @@ elif selected_page == "💰 Optimization Report":
         height=500
     )
     
+    # Export
     csv = portfolio.to_csv(index=False).encode('utf-8')
     st.download_button("📥 Download Report (CSV)", csv, "Optimized_Portfolio.csv", "text/csv")
 

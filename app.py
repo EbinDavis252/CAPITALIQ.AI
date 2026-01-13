@@ -3,9 +3,6 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-import seaborn as sns
-import matplotlib.pyplot as plt
-
 from sklearn.ensemble import RandomForestRegressor
 from scipy.optimize import linprog
 
@@ -31,86 +28,81 @@ st.markdown("""
     }
 
     /* 2. Text Visibility Fixes (Force White) */
-    h1, h2, h3, h4, h5, h6, .stMarkdown, p, li, span, label, .stDataFrame {
+    h1, h2, h3, h4, h5, h6, .stMarkdown, p, li, span, label, .stDataFrame, .stRadio label {
         color: #e2e8f0 !important;
         font-family: 'Inter', sans-serif;
     }
     
-    /* 3. Glass Cards (Semi-transparent backgrounds for readability) */
+    /* 3. Glass Cards */
     div[data-testid="stMetric"], div[data-testid="stExpander"] {
-        background-color: rgba(30, 41, 59, 0.7); /* Dark Blue-Grey Glass */
+        background-color: rgba(30, 41, 59, 0.7); 
         border: 1px solid rgba(255, 255, 255, 0.1);
         backdrop-filter: blur(10px);
         border-radius: 12px;
-        padding: 20px;
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
     }
 
-    /* 4. Metric Value Coloring */
-    div[data-testid="stMetricValue"] {
-        color: #00e676 !important; /* Bright Green */
-        font-weight: 700;
-    }
-    div[data-testid="stMetricLabel"] {
-        color: #94a3b8 !important; /* Muted Grey */
-    }
-
-    /* 5. Tables (Dark Mode) */
-    .stDataFrame {
-        background-color: transparent !important;
-    }
-    div[data-testid="stTable"] {
-        color: white;
-    }
-
-    /* 6. Sidebar Styling */
+    /* 4. Sidebar Styling */
     section[data-testid="stSidebar"] {
-        background-color: #0f172a; /* Slate 900 */
+        background-color: #0f172a; 
         border-right: 1px solid #334155;
     }
     
-    /* 7. Input Widgets (Sliders/Inputs) */
-    .stNumberInput, .stSlider {
-        color: white;
+    /* 5. Custom Radio Button (Navigation) */
+    div[role="radiogroup"] > label > div:first-of-type {
+        background-color: #0f172a;
     }
     </style>
 """, unsafe_allow_html=True)
 
 # ----------------------------------------------------
-# 2. Sidebar: Strategy Controls
+# 2. Sidebar: Navigation & Strategy Controls
 # ----------------------------------------------------
 with st.sidebar:
     st.title("💎 CAPITALIQ-AI™")
     st.caption("Advanced Decision Support System")
     st.markdown("---")
     
-    st.subheader("1. Data Intelligence")
-    hist_file = st.file_uploader("📂 Historical Data (Train)", type=["csv"])
-    prop_file = st.file_uploader("📂 New Proposals (Predict)", type=["csv"])
+    # --- A. NAVIGATION (Replaces Tabs) ---
+    st.subheader("📍 Navigation")
+    selected_page = st.radio(
+        "Go to:", 
+        ["🚀 Executive Summary", "🧠 AI Insights", "⚡ Efficient Frontier", "💰 Optimization Report", "🧊 Strategic 3D Map"],
+        label_visibility="collapsed"
+    )
     
     st.markdown("---")
-    st.subheader("2. Strategic Constraints")
+    
+    # --- B. STRATEGIC CONSTRAINTS ---
+    st.subheader("⚙️ Strategic Constraints")
     budget_input = st.number_input("💰 Capital Budget (₹)", value=15000000.0, step=1000000.0)
     max_risk = st.slider("⚠️ Max Portfolio Risk", 1.0, 10.0, 6.5)
     
     st.markdown("---")
-    st.subheader("3. Market Simulator")
-    market_shock = st.slider("📉 Market Shock Factor", -0.20, 0.20, 0.0, 0.01, format="%+.0f%%")
     
-    st.markdown("---")
+    # --- C. MARKET SIMULATOR ---
+    st.subheader("📉 Market Simulator")
+    market_shock = st.slider("Market Shock Factor", -0.20, 0.20, 0.0, 0.01, format="%+.0f%%")
+    
     st.info("Live Project: Grant Thornton Bharat LLP")
 
 # ----------------------------------------------------
-# 3. Main Application Logic
+# 3. Main Page: Data Ingestion (Moved Here)
 # ----------------------------------------------------
 st.title("📊 Executive Capital Command Center")
-st.markdown("### _AI-Powered Analytics for High-Stakes Investment Decisions_")
 
-if hist_file is None or prop_file is None:
-    # Empty State - Friendly Prompt
-    st.warning("⚠️ **System Standby:** Please upload project data to initialize the Strategic Engine.")
-    st.info("💡 **Tip:** Upload 'grant_thornton_project_data.csv' and 'new_project_proposals.csv'.")
-    st.stop()
+# --- DATA UPLOAD SECTION (Expanded by default until data is loaded) ---
+with st.expander("📂 Data Initialization & Configuration", expanded=True):
+    col_u1, col_u2 = st.columns(2)
+    with col_u1:
+        hist_file = st.file_uploader("1. Upload Historical Data (Train)", type=["csv"])
+    with col_u2:
+        prop_file = st.file_uploader("2. Upload New Proposals (Predict)", type=["csv"])
+
+    # Quick check to stop execution if data is missing
+    if hist_file is None or prop_file is None:
+        st.warning("⚠️ **System Standby:** Awaiting Data Streams...")
+        st.stop() # Stops the script here until files are present
 
 # Load Data
 @st.cache_data
@@ -120,48 +112,37 @@ def load_data(h, p):
 df_hist, df_prop = load_data(hist_file, prop_file)
 
 # ----------------------------------------------------
-# 4. Advanced ML Pipeline
+# 4. Advanced ML Pipeline (Runs regardless of page selection)
 # ----------------------------------------------------
 features = ["Investment_Capital", "Duration_Months", "Risk_Score", "Strategic_Alignment", "Market_Trend_Index"]
-targets = ["Actual_ROI_Pct", "Actual_NPV"]
 
 # Train Models
-with st.spinner('⚙️ Calibrating AI Models...'):
+with st.spinner('⚙️ Calibrating AI Models & Optimizing Portfolio...'):
     rf_roi = RandomForestRegressor(n_estimators=200, random_state=42)
     rf_npv = RandomForestRegressor(n_estimators=200, random_state=42)
     
-    rf_roi.fit(df_hist[features], df_hist["Actual_ROI_Pct"])
-    rf_npv.fit(df_hist[features], df_hist["Actual_NPV"])
+    try:
+        rf_roi.fit(df_hist[features], df_hist["Actual_ROI_Pct"])
+        rf_npv.fit(df_hist[features], df_hist["Actual_NPV"])
+    except Exception as e:
+        st.error(f"Data Mismatch Error: {e}")
+        st.stop()
 
-# Prediction with Scenario Adjustment
-df_prop["Pred_ROI"] = rf_roi.predict(df_prop[features]) * (1 + market_shock)
-df_prop["Pred_NPV"] = rf_npv.predict(df_prop[features]) * (1 + market_shock)
+    # Prediction with Scenario Adjustment
+    df_prop["Pred_ROI"] = rf_roi.predict(df_prop[features]) * (1 + market_shock)
+    df_prop["Pred_NPV"] = rf_npv.predict(df_prop[features]) * (1 + market_shock)
+    df_prop["Efficiency_Ratio"] = df_prop["Pred_ROI"] / df_prop["Risk_Score"]
 
-# Enhancement: Efficiency Ratio (Return per unit of Risk)
-df_prop["Efficiency_Ratio"] = df_prop["Pred_ROI"] / df_prop["Risk_Score"]
+    # Optimization Engine
+    c = -df_prop["Pred_NPV"].values 
+    A = [df_prop["Investment_Capital"].values]
+    b = [budget_input]
+    bounds = [(0, 1) for _ in range(len(df_prop))]
 
-# ----------------------------------------------------
-# 5. Advanced Optimization Engine
-# ----------------------------------------------------
-c = -df_prop["Pred_NPV"].values 
-A = [df_prop["Investment_Capital"].values]
-b = [budget_input]
-bounds = [(0, 1) for _ in range(len(df_prop))]
-
-res = linprog(c, A_ub=A, b_ub=b, bounds=bounds, method='highs')
-df_prop["Selected"] = res.x.round(0) if res.success else 0
-portfolio = df_prop[df_prop["Selected"] == 1]
-
-# ----------------------------------------------------
-# 6. Enterprise Dashboard Tabs
-# ----------------------------------------------------
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "🚀 Executive Summary", 
-    "🧠 AI Insights",
-    "⚡ Efficient Frontier", 
-    "💰 Optimization Report",
-    "🧊 Strategic 3D Map"
-])
+    # Using 'highs' method for robustness
+    res = linprog(c, A_ub=A, b_ub=b, bounds=bounds, method='highs')
+    df_prop["Selected"] = res.x.round(0) if res.success else 0
+    portfolio = df_prop[df_prop["Selected"] == 1]
 
 # Common Plotly Layout for Dark Theme
 def dark_chart(fig):
@@ -173,8 +154,12 @@ def dark_chart(fig):
     )
     return fig
 
-# --- TAB 1: EXECUTIVE SUMMARY ---
-with tab1:
+# ----------------------------------------------------
+# 5. Dynamic Page Rendering (Based on Sidebar Selection)
+# ----------------------------------------------------
+
+# --- PAGE 1: EXECUTIVE SUMMARY ---
+if selected_page == "🚀 Executive Summary":
     st.subheader("📌 Portfolio Performance Snapshot")
     
     # Hero Metrics
@@ -205,8 +190,8 @@ with tab1:
             fig_pie = px.pie(portfolio, values='Investment_Capital', names='Department', hole=0.6, color_discrete_sequence=px.colors.sequential.Tealgrn_r)
             st.plotly_chart(dark_chart(fig_pie), use_container_width=True)
 
-# --- TAB 2: AI INSIGHTS ---
-with tab2:
+# --- PAGE 2: AI INSIGHTS ---
+elif selected_page == "🧠 AI Insights":
     st.subheader("🔍 Deep Dive: Why these projects?")
     
     c_left, c_right = st.columns(2)
@@ -229,15 +214,14 @@ with tab2:
         )
         st.plotly_chart(dark_chart(fig_scat), use_container_width=True)
 
-# --- TAB 3: EFFICIENT FRONTIER ---
-with tab3:
+# --- PAGE 3: EFFICIENT FRONTIER ---
+elif selected_page == "⚡ Efficient Frontier":
     st.subheader("⚡ Efficient Frontier Simulation")
     st.markdown("Simulating **2,000 Portfolios** to find the optimal Risk-Return trade-off.")
     
     if st.button("🔄 Run Simulation"):
         with st.spinner("Crunching numbers..."):
             results = []
-            # Smart Sampling
             total_cap = df_prop["Investment_Capital"].sum()
             avg_p = min(0.5, budget_input / (total_cap + 1)) 
             
@@ -259,7 +243,7 @@ with tab3:
                     labels={"Risk": "Portfolio Risk", "Return": "Portfolio ROI (%)"},
                     color_continuous_scale="Viridis"
                 )
-                # Add Current Portfolio
+                # Add Current Portfolio Marker
                 if not portfolio.empty:
                     fig_ef.add_trace(go.Scatter(
                         x=[portfolio["Risk_Score"].mean()], 
@@ -271,8 +255,8 @@ with tab3:
             else:
                 st.error("Simulation constraint too tight. Check budget.")
 
-# --- TAB 4: OPTIMIZATION REPORT ---
-with tab4:
+# --- PAGE 4: OPTIMIZATION REPORT ---
+elif selected_page == "💰 Optimization Report":
     st.subheader("📋 Detailed Selection Report")
     st.markdown("Projects are ranked by **AI Score** and **Efficiency Ratio**.")
     
@@ -291,8 +275,8 @@ with tab4:
     csv = portfolio.to_csv(index=False).encode('utf-8')
     st.download_button("📥 Download Report (CSV)", csv, "Optimized_Portfolio.csv", "text/csv")
 
-# --- TAB 5: 3D MAP ---
-with tab5:
+# --- PAGE 5: 3D MAP ---
+elif selected_page == "🧊 Strategic 3D Map":
     st.subheader("🧊 Strategic 3D Landscape")
     
     df_prop["Status"] = df_prop["Selected"].apply(lambda x: "Selected" if x==1 else "Rejected")
@@ -314,12 +298,3 @@ with tab5:
         margin=dict(l=0, r=0, b=0, t=0)
     )
     st.plotly_chart(fig_3d, use_container_width=True)
-
-# Footer
-st.markdown("---")
-st.markdown(
-    "<div style='text-align: center; color: #94a3b8;'>"
-    "© 2026 CAPITALIQ-AI™ | Developed by KD | Grant Thornton Bharat LLP Live Project"
-    "</div>", 
-    unsafe_allow_html=True
-)

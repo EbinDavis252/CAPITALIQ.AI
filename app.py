@@ -231,7 +231,7 @@ portfolio = df_prop[df_prop["Selected"] == 1]
 # 5. Dashboard Pages
 # ----------------------------------------------------
 
-elif selected_page == "🚀 Executive Summary":
+if selected_page == "🚀 Executive Summary":
     st.title("📊 Executive Dashboard")
     
     # Top KPIS

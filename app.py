@@ -40,7 +40,7 @@ st.markdown("""
         background-color: rgba(30, 41, 59, 0.6); 
         border: 1px solid rgba(255, 255, 255, 0.1);
         backdrop-filter: blur(12px);
-        border-radius: 4px; /* Sharper corners for pro look */
+        border-radius: 4px; 
         padding: 15px;
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
     }
@@ -192,10 +192,19 @@ with st.sidebar:
     st.caption("Strategic Portfolio Optimizer")
     st.markdown("---")
     
-    # Navigation
+    # --- AUTO-REDIRECT LOGIC ---
+    # Ensure session state for navigation exists
+    if "page_selection" not in st.session_state:
+        st.session_state.page_selection = "Home & Data"
+
+    # Define pages
+    pages = ["Home & Data", "Executive Summary", "AI Insights", "Efficient Frontier", "Optimization Report", "Strategic 3D Map", "Scenario Manager", "AI Deal Memos"]
+
+    # Navigation Widget (Controlled by Session State)
     selected_page = st.radio(
         "NAVIGATION", 
-        ["Home & Data", "Executive Summary", "AI Insights", "Efficient Frontier", "Optimization Report", "Strategic 3D Map", "Scenario Manager", "AI Deal Memos"],
+        pages,
+        key="page_selection", # Bind to state
         label_visibility="collapsed"
     )
     
@@ -250,6 +259,7 @@ if selected_page == "Home & Data":
     with col_setup:
         st.markdown("#### Initialize System")
         
+        # Callback to disable demo mode if user uploads
         def disable_demo():
             st.session_state['use_demo'] = False
 
@@ -267,42 +277,45 @@ if selected_page == "Home & Data":
     data_source = None
     if st.session_state.get('use_demo', False):
         df_hist, df_prop = get_templates()
-        st.success("System Status: Demo Data Loaded.")
         data_source = "demo"
     elif hist_file and prop_file:
         df_hist = pd.read_csv(hist_file)
         df_prop = pd.read_csv(prop_file)
-        st.success("System Status: Custom Data Uploaded.")
         data_source = "upload"
-    else:
-        st.warning("Awaiting Data Streams...")
-        st.stop()
-
-    if 'df_prop' not in st.session_state or st.session_state.get('data_source') != data_source:
-        with st.spinner("Processing Data..."):
+    
+    # If valid data exists and we haven't processed it yet (or source changed)
+    if data_source and ('df_prop' not in st.session_state or st.session_state.get('data_source') != data_source):
+        with st.spinner("Processing Data & Training Models..."):
             rf_roi, feature_imp = train_models(df_hist)
             features = ["Investment_Capital", "Duration_Months", "Risk_Score", "Strategic_Alignment", "Market_Trend_Index"]
             df_prop["Pred_ROI"] = rf_roi.predict(df_prop[features])
+            
+            # Save to State
             st.session_state['df_prop'] = df_prop
             st.session_state['feature_imp'] = feature_imp
             st.session_state['data_source'] = data_source
+            
+            # --- AUTO-REDIRECT TRIGGER ---
+            st.session_state.page_selection = "Executive Summary"
             st.rerun()
 
 # --- SHARED PROCESSING ---
-if 'df_prop' not in st.session_state:
+# This block ensures that if we are not on Home & Data, we have data.
+if selected_page != "Home & Data" and 'df_prop' not in st.session_state:
     st.warning("Please load data first.")
     st.stop()
 
-df_prop = st.session_state['df_prop'].copy()
-feature_imp = st.session_state['feature_imp']
-features = ["Investment_Capital", "Duration_Months", "Risk_Score", "Strategic_Alignment", "Market_Trend_Index"]
+if 'df_prop' in st.session_state:
+    df_prop = st.session_state['df_prop'].copy()
+    feature_imp = st.session_state['feature_imp']
+    features = ["Investment_Capital", "Duration_Months", "Risk_Score", "Strategic_Alignment", "Market_Trend_Index"]
 
-# Updates
-df_prop["Pred_ROI"] = df_prop["Pred_ROI"] * (1 + market_shock)
-df_prop["Dynamic_NPV"] = df_prop.apply(lambda row: calculate_dynamic_npv(row, wacc_input), axis=1)
-df_prop["Efficiency"] = df_prop["Pred_ROI"] / df_prop["Risk_Score"]
-df_prop = run_advanced_optimization(df_prop, budget_input)
-portfolio = df_prop[df_prop["Selected"] == 1]
+    # Dynamic Updates (Recalculate on every interaction)
+    df_prop["Pred_ROI"] = df_prop["Pred_ROI"] * (1 + market_shock)
+    df_prop["Dynamic_NPV"] = df_prop.apply(lambda row: calculate_dynamic_npv(row, wacc_input), axis=1)
+    df_prop["Efficiency"] = df_prop["Pred_ROI"] / df_prop["Risk_Score"]
+    df_prop = run_advanced_optimization(df_prop, budget_input)
+    portfolio = df_prop[df_prop["Selected"] == 1]
 
 # --- PAGE: EXECUTIVE SUMMARY ---
 if selected_page == "Executive Summary":

@@ -231,7 +231,7 @@ portfolio = df_prop[df_prop["Selected"] == 1]
 # 5. Dashboard Pages
 # ----------------------------------------------------
 
-if selected_page == "🚀 Executive Summary":
+elif selected_page == "🚀 Executive Summary":
     st.title("📊 Executive Dashboard")
     
     # Top KPIS
@@ -254,11 +254,11 @@ if selected_page == "🚀 Executive Summary":
     with c2:
         st.subheader("⚡ Top ROI Drivers")
         # Display Feature Importance
+        # FIX: Changed cmap='Tealgrn' to cmap='Greens' because pandas uses Matplotlib colors
         st.dataframe(
-            feature_imp.head(5).style.background_gradient(cmap='Tealgrn'),
+            feature_imp.head(5).style.background_gradient(cmap='Greens'),
             use_container_width=True, hide_index=True
         )
-
 elif selected_page == "🧠 AI Insights":
     st.subheader("🧠 The Brain Behind the Budget")
     

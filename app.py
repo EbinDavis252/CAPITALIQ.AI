@@ -334,20 +334,22 @@ def reset_data_callback():
 # 4. Sidebar & Layout
 # ----------------------------------------------------
 with st.sidebar:
-    # --- BRANDING LOGO (FIXED VISIBILITY) ---
-    # We use an HTML container with a white background to guarantee the logo pops.
+    # --- BRANDING LOGO (CYBERPUNK GLOW STYLE) ---
+    # We use CSS 'filter: invert(1)' to turn the black icon WHITE.
+    # We also add a 'drop-shadow' to give it a subtle AI glow.
     st.markdown(
         """
-        <div style="background-color: rgba(255, 255, 255, 0.9); padding: 20px; border-radius: 10px; margin-bottom: 20px; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
-            <img src="https://cdn-icons-png.flaticon.com/512/2910/2910312.png" width="100" style="display: block; margin-left: auto; margin-right: auto;">
-            <p style="color: #0f172a; font-weight: bold; margin-top: 10px; font-size: 14px;">CAPITALIQ ORGANIZATION</p>
+        <div style="text-align: center; margin-bottom: 20px;">
+            <img src="https://cdn-icons-png.flaticon.com/512/2103/2103633.png" 
+                 width="100" 
+                 style="filter: invert(1) drop-shadow(0 0 4px #22c55e); transition: transform 0.3s;">
+            <p style="color: #e2e8f0; font-weight: 600; font-size: 24px; margin-top: 10px; letter-spacing: 2px;">CAPITALIQ-AI</p>
+            <p style="color: #94a3b8; font-size: 12px; margin-top: -15px;">Enterprise Edition</p>
         </div>
-        """, 
+        """,
         unsafe_allow_html=True
     )
     
-    st.title("CAPITALIQ-AI")
-    st.caption("Strategic Portfolio Optimizer")
     st.markdown("---")
     
     if "page_selection" not in st.session_state:

@@ -5,6 +5,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from sklearn.ensemble import RandomForestRegressor
 import pulp
+from fpdf import FPDF # REQUIRED: pip install fpdf
 
 # ----------------------------------------------------
 # 1. Page Configuration & CSS
@@ -12,7 +13,8 @@ import pulp
 st.set_page_config(
     page_title="CAPITALIQ-AI | Enterprise Edition",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
+    page_icon="💼"
 )
 
 # --- THEME ENGINE: HIGH CONTRAST PROFESSIONAL ---
@@ -197,10 +199,7 @@ def run_advanced_optimization(df, budget, min_dept_alloc_pct=0.0):
 # --- IMPROVED VISUALIZATIONS ---
 
 def generate_waterfall_chart(portfolio):
-    """
-    Creates a Financial Waterfall chart using graph_objects.
-    This is clearer and more professional than a diverging bar.
-    """
+    """Creates a Financial Waterfall chart using graph_objects."""
     base_npv = portfolio['Dynamic_NPV'].sum()
     
     # Simulating sensitivities
@@ -232,9 +231,7 @@ def generate_waterfall_chart(portfolio):
     return fig
 
 def generate_complex_radar(df_prop):
-    """
-    Complex Radar with Benchmark Comparison.
-    """
+    """Complex Radar with Benchmark Comparison."""
     categories = ["Risk_Score", "Strategic_Alignment", "Pred_ROI"]
     
     # Normalize
@@ -242,7 +239,6 @@ def generate_complex_radar(df_prop):
     df_norm["Risk_Score"] = 10 - df_norm["Risk_Score"] # Invert Risk so outer is better
     
     funded = df_norm[df_norm["Selected"] == 1][categories].mean()
-    rejected = df_norm[df_norm["Selected"] == 0][categories].mean()
     
     fig = go.Figure()
     
@@ -274,9 +270,7 @@ def generate_complex_radar(df_prop):
     return fig
 
 def generate_combo_scenario_chart(scenarios):
-    """
-    Dual Axis Chart: Bar (NPV) and Line (ROI).
-    """
+    """Dual Axis Chart: Bar (NPV) and Line (ROI)."""
     df = pd.DataFrame(scenarios)
     fig = go.Figure()
     
@@ -303,11 +297,67 @@ def generate_combo_scenario_chart(scenarios):
     )
     return fig
 
-def generate_board_report(portfolio, budget, wacc):
-    txt = f"CAPITALIQ-AI REPORT\n-------------------\nBudget: INR {budget:,.2f}\nDeployed: INR {portfolio['Investment_Capital'].sum():,.2f}\nNPV: INR {portfolio['Dynamic_NPV'].sum():,.2f}\nWACC: {wacc*100:.1f}%\n\nAPPROVED PROJECTS:\n"
+# --- NEW: PDF GENERATOR CLASS ---
+class PDFReport(FPDF):
+    def header(self):
+        self.set_font('Arial', 'B', 12)
+        self.cell(0, 10, 'CAPITALIQ-AI | Strategic Portfolio Report', 0, 1, 'C')
+        self.line(10, 20, 200, 20)
+        self.ln(10)
+
+    def chapter_title(self, title):
+        self.set_font('Arial', 'B', 12)
+        self.set_fill_color(200, 220, 255)
+        self.cell(0, 6, title, 0, 1, 'L', 1)
+        self.ln(4)
+
+    def chapter_body(self, body):
+        self.set_font('Arial', '', 10)
+        self.multi_cell(0, 5, body)
+        self.ln()
+
+def create_pdf_report(portfolio, rejected, budget, wacc):
+    pdf = PDFReport()
+    pdf.add_page()
+    
+    # Executive Summary
+    pdf.chapter_title('1. Executive Summary')
+    summary = f"""
+    Date: {pd.Timestamp.now().strftime('%Y-%m-%d')}
+    Total Budget Authorized: INR {budget:,.2f}
+    Capital Deployed: INR {portfolio['Investment_Capital'].sum():,.2f}
+    Total Portfolio NPV: INR {portfolio['Dynamic_NPV'].sum():,.2f}
+    Weighted Average Cost of Capital (WACC): {wacc*100:.1f}%
+    Average ROI: {portfolio['Pred_ROI'].mean():.2f}%
+    """
+    pdf.chapter_body(summary)
+    
+    # Approved Projects
+    pdf.chapter_title('2. Approved Investment Schedule')
+    pdf.set_font('Arial', 'B', 9)
+    # Header
+    pdf.cell(40, 7, 'Project ID', 1)
+    pdf.cell(50, 7, 'Department', 1)
+    pdf.cell(50, 7, 'Investment (INR)', 1)
+    pdf.cell(30, 7, 'ROI (%)', 1)
+    pdf.ln()
+    
+    pdf.set_font('Arial', '', 9)
     for _, row in portfolio.iterrows():
-        txt += f"[x] {row['Project_ID']} | ROI: {row['Pred_ROI']:.1f}%\n"
-    return txt
+        pdf.cell(40, 6, str(row['Project_ID']), 1)
+        pdf.cell(50, 6, str(row['Department']), 1)
+        pdf.cell(50, 6, f"{row['Investment_Capital']:,.0f}", 1)
+        pdf.cell(30, 6, f"{row['Pred_ROI']:.1f}", 1)
+        pdf.ln()
+    pdf.ln()
+    
+    # Rejected Projects
+    pdf.chapter_title('3. Deferred / Rejected Proposals')
+    pdf.set_font('Arial', '', 9)
+    for _, row in rejected.iterrows():
+        pdf.cell(0, 5, f"[X] {row['Project_ID']} ({row['Department']}) - Low Efficiency Score: {row['Efficiency']:.2f}", 0, 1)
+
+    return pdf.output(dest='S').encode('latin-1')
 
 def dark_chart(fig):
     fig.update_layout(template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="#e2e8f0"), margin=dict(l=20, r=20, t=40, b=20))
@@ -359,6 +409,10 @@ def reset_data_callback():
 # 4. Sidebar & Layout
 # ----------------------------------------------------
 with st.sidebar:
+    # --- NEW: BRANDING LOGO ---
+    # Placeholder logo. REPLACE the URL below with "logo.png" if you have a local file.
+    st.image("https://cdn-icons-png.flaticon.com/512/2910/2910312.png", width=80) 
+    
     st.title("CAPITALIQ-AI")
     st.caption("Strategic Portfolio Optimizer")
     st.markdown("---")
@@ -447,6 +501,7 @@ if 'df_prop' in st.session_state:
     
     df_prop = run_advanced_optimization(df_prop, budget_input, min_dept_spend)
     portfolio = df_prop[df_prop["Selected"] == 1]
+    rejected = df_prop[df_prop["Selected"] == 0]
 
 # --- PAGE: EXECUTIVE SUMMARY ---
 if selected_page == "Executive Summary":
@@ -479,8 +534,15 @@ if selected_page == "Executive Summary":
             st.info("No projects selected. Try increasing the budget.")
     with c2:
         st.subheader("Actionable Reports")
-        report_txt = generate_board_report(portfolio, budget_input, wacc_input)
-        st.download_button("📄 Download Board Report", report_txt, "Board_Report.txt", use_container_width=True)
+        # --- NEW: PDF BUTTON ---
+        pdf_data = create_pdf_report(portfolio, rejected, budget_input, wacc_input)
+        st.download_button(
+            "📄 Download Official PDF Report", 
+            data=pdf_data, 
+            file_name="CapitalIQ_Report.pdf", 
+            mime="application/pdf", 
+            use_container_width=True
+        )
         
         st.markdown("##### Top ROI Drivers")
         st.dataframe(feature_imp.head(3).style.background_gradient(cmap='Greens'), use_container_width=True, hide_index=True)
@@ -568,8 +630,9 @@ elif selected_page == "Optimization Report":
     tab1, tab2 = st.tabs(["Selected Projects", "Rejected Projects"])
     with tab1:
         st.dataframe(portfolio[["Project_ID", "Department", "Investment_Capital", "Pred_ROI", "Payback_Years", "Efficiency"]].style.format({"Investment_Capital": "₹{:,.0f}", "Pred_ROI": "{:.1f}%", "Payback_Years": "{:.1f} yrs", "Efficiency": "{:.2f}"}).background_gradient(subset=["Efficiency"], cmap="Greens"), use_container_width=True)
+        # CSV BUTTON KEPT AS BACKUP
         csv = portfolio.to_csv(index=False).encode('utf-8')
-        st.download_button("Export Portfolio (CSV)", csv, "Strategic_Portfolio.csv", "text/csv")
+        st.download_button("Export Raw Data (CSV)", csv, "Strategic_Portfolio.csv", "text/csv")
         render_analysis("""This schedule outlines the projects that successfully cleared both the financial hurdle rates and the strategic optimization constraints. The Efficiency metric, calculated as ROI divided by Risk Score, serves as a primary selection criterion. Projects with high efficiency scores (Dark Green) deliver the most value per unit of risk assumed, forming the backbone of a resilient portfolio.""")
     with tab2:
         rejected = df_prop[df_prop["Selected"] == 0]

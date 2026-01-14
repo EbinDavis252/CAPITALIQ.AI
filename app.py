@@ -283,14 +283,27 @@ def run_advanced_optimization(df, budget, min_dept_alloc_pct=0.0):
     return df
 
 def generate_ai_memo_text(row, api_key):
-    """Real AI Integration via Google Gemini"""
+    """Real AI Integration via Google Gemini (Auto-Model Selector)"""
     if not api_key:
         return f"Decision: APPROVED\n\nThis project exceeds the required risk-adjusted return threshold and aligns with strategic goals."
     
     try:
         genai.configure(api_key=api_key)
-        # CHANGED: 'gemini-pro' -> 'gemini-1.5-flash'
-        model = genai.GenerativeModel('gemini-1.5-flash') 
+        
+        # 1. Try to list available models to find a valid one
+        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        
+        # 2. Pick the best available model (Flash > Pro > Default)
+        model_name = 'gemini-1.5-flash' # Default target
+        if 'models/gemini-1.5-flash' in available_models:
+            model_name = 'gemini-1.5-flash'
+        elif 'models/gemini-pro' in available_models:
+            model_name = 'gemini-pro'
+        elif available_models:
+            model_name = available_models[0].replace('models/', '') # Fallback to first available
+        
+        # 3. Generate
+        model = genai.GenerativeModel(model_name) 
         prompt = f"""
         Act as a cynical Investment Committee member. Analyze this project:
         Desc: {row.get('Project_Description', 'Standard Project')}
@@ -304,7 +317,7 @@ def generate_ai_memo_text(row, api_key):
         return response.text
     except Exception as e:
         return f"AI Error: {str(e)}"
-# --- VISUALIZATIONS ---
+        # --- VISUALIZATIONS ---
 
 def generate_professional_waterfall(portfolio):
     base_npv = portfolio['Dynamic_NPV'].sum()

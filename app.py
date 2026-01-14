@@ -81,6 +81,8 @@ st.markdown("""
         color: #60a5fa !important;
         margin-bottom: 5px;
         display: block;
+        text-transform: uppercase;
+        letter-spacing: 1px;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -194,80 +196,110 @@ def run_advanced_optimization(df, budget, min_dept_alloc_pct=0.0):
 
 # --- IMPROVED VISUALIZATIONS ---
 
-def generate_waterfall_chart(portfolio, wacc):
+def generate_waterfall_chart(portfolio):
     """
-    Replaces the 'disturbing' Tornado chart with a cleaner Waterfall/Bar chart 
-    showing cumulative impact of sensitivities.
+    Creates a Financial Waterfall chart using graph_objects.
+    This is clearer and more professional than a diverging bar.
     """
     base_npv = portfolio['Dynamic_NPV'].sum()
     
-    # Calculate impacts (deltas)
-    impact_wacc_pos = (base_npv * 0.92) - base_npv  # Negative impact
-    impact_wacc_neg = (base_npv * 1.08) - base_npv  # Positive impact
-    impact_capex = (base_npv - (portfolio['Investment_Capital'].sum() * 0.10)) - base_npv
-    impact_roi = (base_npv * 0.85) - base_npv
-
-    # A "Diverging Bar Chart" is much cleaner than a standard Tornado
-    scenarios = [
-        {"Factor": "WACC Increase (+1%)", "Change": impact_wacc_pos}, 
-        {"Factor": "Capex Overrun (+10%)", "Change": impact_capex},
-        {"Factor": "ROI Shortfall (-10%)", "Change": impact_roi},
-        {"Factor": "WACC Decrease (-1%)", "Change": impact_wacc_neg},
-        {"Factor": "ROI Outperform (+10%)", "Change": (base_npv * 1.15) - base_npv}
-    ]
-    df_sens = pd.DataFrame(scenarios)
+    # Simulating sensitivities
+    wacc_impact = -(base_npv * 0.08) # -8% impact
+    inflation_impact = -(base_npv * 0.05) # -5% impact
+    synergy_gain = (base_npv * 0.12) # +12% gain
     
-    fig = px.bar(df_sens, y="Factor", x="Change", orientation='h', 
-                 title="Sensitivity Impact Analysis (Net NPV Change)",
-                 color="Change", 
-                 color_continuous_scale=["#ef4444", "#e2e8f0", "#22c55e"], # Red to Green
-                 text_auto='.2s')
-    
-    fig.update_layout(xaxis_title="Impact on NPV (Currency)", yaxis_title="Risk Scenario")
-    return dark_chart(fig)
+    fig = go.Figure(go.Waterfall(
+        name = "20", orientation = "v",
+        measure = ["relative", "relative", "relative", "relative", "total"],
+        x = ["Base Case", "WACC Increase", "Inflation Shock", "Synergy Upside", "Final Scenario"],
+        textposition = "outside",
+        text = [f"{base_npv/1e6:.1f}M", f"{wacc_impact/1e6:.1f}M", f"{inflation_impact/1e6:.1f}M", f"{synergy_gain/1e6:.1f}M", f"{(base_npv+wacc_impact+inflation_impact+synergy_gain)/1e6:.1f}M"],
+        y = [base_npv, wacc_impact, inflation_impact, synergy_gain, 0],
+        connector = {"line":{"color":"rgb(63, 63, 63)"}},
+        decreasing = {"marker":{"color":"#ef4444"}},
+        increasing = {"marker":{"color":"#22c55e"}},
+        totals = {"marker":{"color":"#3b82f6"}}
+    ))
 
-def generate_3d_radar(df_prop):
+    fig.update_layout(
+        title = "Capital Bridge: Sensitivity to Risk Factors",
+        showlegend = False,
+        template="plotly_dark",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#e2e8f0")
+    )
+    return fig
+
+def generate_complex_radar(df_prop):
     """
-    Simulates a 3D-like experience using a filled Radar chart with multiple layers (traces).
+    Complex Radar with Benchmark Comparison.
     """
     categories = ["Risk_Score", "Strategic_Alignment", "Pred_ROI"]
     
-    # Normalized Data (0-1 Scale) for fair comparison
+    # Normalize
     df_norm = df_prop.copy()
-    df_norm["Risk_Score"] = df_norm["Risk_Score"] / 10
-    df_norm["Strategic_Alignment"] = df_norm["Strategic_Alignment"] / 10
-    df_norm["Pred_ROI"] = df_norm["Pred_ROI"] / 30 # Assumes max ROI ~30%
+    df_norm["Risk_Score"] = 10 - df_norm["Risk_Score"] # Invert Risk so outer is better
     
-    # Clip to 1.0 max
-    df_norm[categories] = df_norm[categories].clip(0, 1)
-
     funded = df_norm[df_norm["Selected"] == 1][categories].mean()
     rejected = df_norm[df_norm["Selected"] == 0][categories].mean()
     
     fig = go.Figure()
     
-    # Layer 1: Rejected (Background)
+    # Trace 1: Ideal Benchmark (The "Perfect" Project)
     fig.add_trace(go.Scatterpolar(
-        r=rejected.values, theta=categories, fill='toself', name='Rejected Avg',
-        line_color='rgba(255, 23, 68, 0.5)', fillcolor='rgba(255, 23, 68, 0.2)'
+        r=[9, 9, 25], theta=["Low Risk (Inv)", "Strategy", "ROI"],
+        fill='toself', name='Target Benchmark',
+        line_color='rgba(255, 255, 255, 0.2)', line_dash='dot'
     ))
-    
-    # Layer 2: Funded (Foreground - Popping out)
+
+    # Trace 2: Funded
     fig.add_trace(go.Scatterpolar(
-        r=funded.values, theta=categories, fill='toself', name='Funded Avg',
-        line_color='#00e676', fillcolor='rgba(0, 230, 118, 0.4)'
+        r=[funded["Risk_Score"], funded["Strategic_Alignment"], funded["Pred_ROI"]],
+        theta=["Low Risk (Inv)", "Strategy", "ROI"],
+        fill='toself', name='Selected Portfolio',
+        line_color='#00e676', opacity=0.8
     ))
     
     fig.update_layout(
         polar=dict(
-            radialaxis=dict(visible=True, range=[0, 1], showticklabels=False),
-            bgcolor="rgba(0,0,0,0)"
+            radialaxis=dict(visible=True, showticklabels=False),
+            bgcolor="rgba(255,255,255,0.05)"
         ),
-        showlegend=True,
-        title="Portfolio Profile: Funded vs Rejected (Normalized)",
+        title="Portfolio Quality vs. Benchmark",
         template="plotly_dark",
         paper_bgcolor="rgba(0,0,0,0)",
         font=dict(color="#e2e8f0")
+    )
+    return fig
+
+def generate_combo_scenario_chart(scenarios):
+    """
+    Dual Axis Chart: Bar (NPV) and Line (ROI).
+    """
+    df = pd.DataFrame(scenarios)
+    fig = go.Figure()
+    
+    # Bar for NPV
+    fig.add_trace(go.Bar(
+        x=df["Name"], y=df["NPV"], name="Net Present Value (NPV)",
+        marker_color="#3b82f6", yaxis="y1"
+    ))
+    
+    # Line for ROI
+    fig.add_trace(go.Scatter(
+        x=df["Name"], y=df["ROI"], name="Avg ROI %",
+        mode='lines+markers', line=dict(color="#fbbf24", width=3), yaxis="y2"
+    ))
+    
+    fig.update_layout(
+        title="Scenario Analysis: Value vs Efficiency",
+        yaxis=dict(title="NPV (Currency)", side="left", showgrid=False),
+        yaxis2=dict(title="ROI (%)", side="right", overlaying="y", showgrid=False),
+        template="plotly_dark",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#e2e8f0"),
+        legend=dict(orientation="h", y=-0.2)
     )
     return fig
 
@@ -282,14 +314,13 @@ def dark_chart(fig):
     return fig
 
 def render_analysis(text):
-    st.markdown(f"<div class='analysis-box'><span class='analysis-title'>💡 AI EXPLANATION</span>{text}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='analysis-box'><span class='analysis-title'>💡 EXECUTIVE INSIGHT</span>{text}</div>", unsafe_allow_html=True)
 
 # ----------------------------------------------------
 # 3. Callback Functions (Nav Logic)
 # ----------------------------------------------------
 
 def process_data_callback():
-    """Callback to process data immediately upon upload."""
     if st.session_state.u_hist is not None and st.session_state.u_prop is not None:
         try:
             df_hist = standardize_columns(pd.read_csv(st.session_state.u_hist))
@@ -309,7 +340,6 @@ def process_data_callback():
             st.error(f"Error processing files: {e}")
 
 def load_demo_callback():
-    """Callback for Demo Data button."""
     df_hist, df_prop = get_templates()
     rf_roi, feature_imp = train_models(df_hist)
     features = ["Investment_Capital", "Duration_Months", "Risk_Score", "Strategic_Alignment", "Market_Trend_Index"]
@@ -440,15 +470,11 @@ if selected_page == "Executive Summary":
                 color="Pred_ROI", 
                 title="Budget Distribution (Colored by ROI)", 
                 text_auto='.2s',
-                color_continuous_scale="viridis" # Higher contrast
+                color_continuous_scale="viridis" 
             )
             fig.update_layout(xaxis_title="Department", yaxis_title="Allocated Budget (INR)")
             st.plotly_chart(dark_chart(fig), use_container_width=True)
-            render_analysis(f"""
-            **What this shows:** The total money given to each department.
-            <br>**How to read it:** Taller bars = More Money. Brighter Yellow/Green colors = Higher predicted Return on Investment (ROI).
-            <br>**Insight:** If you see short, dark purple bars, that department is getting little money and offers low returns.
-            """)
+            render_analysis("""This chart reveals the strategic prioritization of capital across functional units. The height of the bars corresponds to the total capital allocated, while the color gradient indicates the return efficiency. Departments represented by brighter yellow-green bars are generating superior ROI, suggesting that the AI has successfully concentrated capital in high-performance areas to maximize the aggregate WACC-adjusted value.""")
         else:
             st.info("No projects selected. Try increasing the budget.")
     with c2:
@@ -458,7 +484,7 @@ if selected_page == "Executive Summary":
         
         st.markdown("##### Top ROI Drivers")
         st.dataframe(feature_imp.head(3).style.background_gradient(cmap='Greens'), use_container_width=True, hide_index=True)
-        render_analysis("""**Drivers:** These 3 factors are what the AI looks for when predicting if a project will succeed.""")
+        render_analysis("""These factors represent the primary statistical drivers influencing project success within your specific dataset. The model weights these variables most heavily when predicting future ROI, indicating that improvements in these specific areas will yield the highest marginal increase in portfolio performance.""")
 
 # --- PAGE: AI INSIGHTS ---
 elif selected_page == "AI Insights":
@@ -466,36 +492,26 @@ elif selected_page == "AI Insights":
     
     col1, col2 = st.columns(2)
     with col1:
-        st.markdown("##### 1. Sensitivity Analysis (Impact Chart)")
+        st.markdown("##### 1. Financial Sensitivity Bridge")
         if not portfolio.empty:
-            fig_torn = generate_waterfall_chart(portfolio, wacc_input)
+            fig_torn = generate_waterfall_chart(portfolio)
             st.plotly_chart(fig_torn, use_container_width=True)
-            render_analysis("""
-            **What this shows:** How fragile your profit (NPV) is to external shocks.
-            <br>**How to read it:** Red bars on the left mean these events will *hurt* your profit. Green bars mean they will *help*.
-            <br>**Insight:** If 'WACC Increase' has a huge red bar, your portfolio is very sensitive to interest rate hikes.
-            """)
+            render_analysis("""This Waterfall analysis bridges your current Base Case NPV to potential future states. The blue total represents your current projection. The red steps downward illustrate how specific risks, such as a rise in the Weighted Average Cost of Capital (WACC) or inflation shocks, erode value. Conversely, green steps would indicate potential upsides. This visual quantifies exactly how much capital buffer is required to withstand adverse market conditions.""")
         else:
             st.warning("No portfolio to analyze.")
         
     with col2:
-        st.markdown("##### 2. Predictive Drivers")
+        st.markdown("##### 2. Predictive Signal Strength")
         fig_imp = px.bar(feature_imp, x="Importance", y="Feature", orientation='h', color="Importance", color_continuous_scale="Teal")
         st.plotly_chart(dark_chart(fig_imp), use_container_width=True)
-        render_analysis("""
-        **What this shows:** The recipe the AI uses to predict ROI.
-        <br>**How to read it:** Longer bars = More important ingredients.
-        """)
+        render_analysis("""This visualization ranks the predictive power of each input variable. A longer bar signifies that the Random Forest algorithm relies more heavily on that specific metric to distinguish between high-performing and low-performing projects. Understanding this hierarchy allows management to focus data collection and improvement efforts on the variables that actually move the needle.""")
 
     st.markdown("---")
-    st.markdown("##### 3. Portfolio Radar Profile")
+    st.markdown("##### 3. Strategic Fit vs. Benchmark")
     
-    fig_radar = generate_3d_radar(df_prop)
+    fig_radar = generate_complex_radar(df_prop)
     st.plotly_chart(fig_radar, use_container_width=True)
-    render_analysis("""
-    **What this shows:** A visual comparison between 'Winning' projects (Green) and 'Rejected' projects (Red).
-    <br>**How to read it:** The further the shape stretches outward, the higher the score. You want the Green shape to be big in 'Strategy' and 'ROI', but small in 'Risk'.
-    """)
+    render_analysis("""This Radar chart contrasts the selected portfolio's average profile (Green Area) against an ideal theoretical benchmark (Dotted White Line). The vertices represent key strategic dimensions: Risk (inverted so outer is better), Strategic Alignment, and ROI. A robust portfolio should expand outward to fill the web, maximizing Strategy and ROI while minimizing Risk. Gaps between the green area and the white line highlight specific opportunities for portfolio optimization.""")
 
 # --- PAGE: EFFICIENT FRONTIER ---
 elif selected_page == "Efficient Frontier":
@@ -525,7 +541,7 @@ elif selected_page == "Efficient Frontier":
             fig_ef = px.scatter(
                 sim_df, x="Risk", y="Return", color="NPV", 
                 title="Risk vs Return Landscape", 
-                color_continuous_scale="turbo", # Very high visibility scale
+                color_continuous_scale="turbo", 
                 labels={"Risk": "Average Risk Score", "Return": "Average ROI (%)"}
             )
             if not portfolio.empty:
@@ -542,7 +558,7 @@ elif selected_page == "Efficient Frontier":
             render_analysis("""
 
 [Image of Efficient Frontier Curve]
- **The Efficient Frontier:** The colorful cloud represents thousands of possible portfolios. The **White Star** is your current selection. If the star is at the top-left edge of the cloud, you have successfully maximized Return for your level of Risk.""")
+ The Efficient Frontier visualization plots thousands of potential portfolio combinations to map the optimal trade-off between risk and return. The colorful cloud represents the universe of possibilities. The White Star marks your current portfolio's position. Ideally, this star should sit on the upper-left boundary of the cloud, indicating that you have achieved the maximum possible return for your accepted level of risk, leaving no value on the table.""")
         else:
             st.error("Simulation failed to find valid portfolios within constraints.")
 
@@ -554,29 +570,29 @@ elif selected_page == "Optimization Report":
         st.dataframe(portfolio[["Project_ID", "Department", "Investment_Capital", "Pred_ROI", "Payback_Years", "Efficiency"]].style.format({"Investment_Capital": "₹{:,.0f}", "Pred_ROI": "{:.1f}%", "Payback_Years": "{:.1f} yrs", "Efficiency": "{:.2f}"}).background_gradient(subset=["Efficiency"], cmap="Greens"), use_container_width=True)
         csv = portfolio.to_csv(index=False).encode('utf-8')
         st.download_button("Export Portfolio (CSV)", csv, "Strategic_Portfolio.csv", "text/csv")
-        render_analysis("""**Explanation:** This table lists every project approved for funding. 'Efficiency' is a custom score calculated as (ROI / Risk). High efficiency means you are getting good returns for low risk.""")
+        render_analysis("""This schedule outlines the projects that successfully cleared both the financial hurdle rates and the strategic optimization constraints. The Efficiency metric, calculated as ROI divided by Risk Score, serves as a primary selection criterion. Projects with high efficiency scores (Dark Green) deliver the most value per unit of risk assumed, forming the backbone of a resilient portfolio.""")
     with tab2:
         rejected = df_prop[df_prop["Selected"] == 0]
         st.dataframe(rejected[["Project_ID", "Investment_Capital", "Pred_ROI"]], use_container_width=True)
-        render_analysis("""**Explanation:** These projects were cut. Usually, this is because they had a low ROI, a very high Risk score, or simply didn't fit into the budget after funding better projects.""")
+        render_analysis("""These proposals were excluded from the final selection. Rejection typically stems from one of three causes: insufficient ROI to cover the cost of capital, a risk profile that exceeds the organizational tolerance, or lower capital efficiency compared to competing projects when budget constraints are applied. These projects should be re-evaluated for scope reduction or risk mitigation before resubmission.""")
 
 # --- PAGE: STRATEGIC 3D MAP ---
 elif selected_page == "Strategic 3D Map":
     st.title("Portfolio Topology")
     df_prop["Status"] = df_prop["Selected"].apply(lambda x: "Funded" if x==1 else "Not Funded")
     
-    # ENHANCED 3D SCATTER
+    # CHANGED 3D CHART: Topology of Efficiency
     fig_3d = px.scatter_3d(
         df_prop, 
-        x="Risk_Score", 
-        y="Strategic_Alignment", 
+        x="Efficiency", 
+        y="Dynamic_NPV", 
         z="Pred_ROI", 
         color="Status", 
         size="Investment_Capital", 
         opacity=0.9, 
         color_discrete_map={"Funded": "#00e676", "Not Funded": "#ff1744"},
-        symbol="Status", # Adds shape differentiation
-        labels={"Risk_Score": "Risk (Lower is Better)", "Strategic_Alignment": "Strategy Fit (Higher is Better)", "Pred_ROI": "ROI %"}
+        symbol="Status", 
+        labels={"Efficiency": "Capital Efficiency (ROI/Risk)", "Dynamic_NPV": "Net Present Value", "Pred_ROI": "ROI %"}
     )
     fig_3d.update_layout(scene=dict(
         xaxis_backgroundcolor="rgba(0,0,0,0)",
@@ -584,7 +600,7 @@ elif selected_page == "Strategic 3D Map":
         zaxis_backgroundcolor="rgba(0,0,0,0)",
     ))
     st.plotly_chart(dark_chart(fig_3d), use_container_width=True)
-    render_analysis("""**How to Navigate:** Click and drag to rotate the cube. <br>**Goal:** You want to see Green bubbles floating in the top-back-left corner (High Strategy, High ROI, Low Risk). Red bubbles should ideally be clustered in the 'bad' corners (Low Strategy/Low ROI).""")
+    render_analysis("""This 3D Topology map allows for a multivariate assessment of the portfolio. By plotting Capital Efficiency (X), Net Present Value (Y), and ROI (Z), we create a volume of value. The Funded projects (Green) should ideally cluster in the upper-right-back quadrant, representing high efficiency, high value, and high return. This visualization helps confirm that the AI is not just picking 'safe' low-value projects, but is truly optimizing for the 'sweet spot' of financial performance.""")
 
 # --- PAGE: SCENARIO MANAGER ---
 elif selected_page == "Scenario Manager":
@@ -599,11 +615,10 @@ elif selected_page == "Scenario Manager":
             st.success(f"Saved {scenario_name}!")
     with col_view:
         if 'scenarios' in st.session_state and st.session_state['scenarios']:
-            s_df = pd.DataFrame(st.session_state['scenarios'])
-            st.dataframe(s_df.style.format({"NPV": "₹{:,.0f}", "ROI": "{:.1f}%", "WACC": "{:.1f}%"}), use_container_width=True)
-            fig_comp = px.bar(s_df, x="Name", y="NPV", color="ROI", title="Scenario NPV Comparison")
-            st.plotly_chart(dark_chart(fig_comp), use_container_width=True)
-            render_analysis("""**Explanation:** This tool lets you answer 'What If?' questions. Create a 'High Inflation' scenario by raising WACC in the sidebar, then save it here to compare against your 'Base Case'.""")
+            # CHANGED: Combo Chart
+            fig_comp = generate_combo_scenario_chart(st.session_state['scenarios'])
+            st.plotly_chart(fig_comp, use_container_width=True)
+            render_analysis("""This scenario analysis tool provides a comparative view of how different strategic assumptions impact the bottom line. The Blue Bars represent the Net Present Value (NPV), indicating the absolute wealth creation of each scenario. The Yellow Line tracks the average ROI percentage. A divergence between these two lines—for example, a scenario with high ROI but low NPV—might indicate a portfolio that is efficient but too conservative in its capital deployment.""")
         else:
             st.info("Adjust WACC/Budget in the sidebar, then click 'Save Current State' to compare scenarios.")
 
@@ -615,11 +630,11 @@ elif selected_page == "AI Deal Memos":
         st.subheader("Top Approvals")
         for i, row in portfolio.sort_values(by="Dynamic_NPV", ascending=False).head(3).iterrows():
             with st.expander(f"APPROVED: {row['Project_ID']} ({row['Department']})", expanded=True):
-                st.markdown(f"**Rationale:**\n* **NPV Contribution:** ₹{row['Dynamic_NPV']/1e5:.1f} Lakhs\n* **Strategic Fit:** {row['Strategic_Alignment']}/10\n* **Decision:** Approved due to high WACC-adjusted return.")
+                st.markdown(f"**Rationale:**\n\n**NPV Contribution:** ₹{row['Dynamic_NPV']/1e5:.1f} Lakhs\n\n**Strategic Fit:** {row['Strategic_Alignment']}/10\n\n**Decision:** This project has been approved because it exceeds the required risk-adjusted return threshold. Its contribution to the aggregate portfolio NPV is significant, and it aligns well with corporate strategic goals, making it a priority for capital allocation.")
     with col_rej:
         st.subheader("Top Rejections")
         rejected = df_prop[df_prop["Selected"] == 0]
         for i, row in rejected.sort_values(by="Pred_ROI", ascending=False).head(3).iterrows():
             with st.expander(f"REJECTED: {row['Project_ID']} ({row['Department']})"):
-                st.markdown(f"**Rationale:**\n* **Issue:** Failed to beat capital cost hurdle or budget constraint.\n* **Risk Score:** {row['Risk_Score']}\n* **Decision:** Deferred to next fiscal cycle.")
-    render_analysis("""**Explanation:** These memos are auto-generated plain-English explanations. They tell you *why* the AI made the decision, so you can explain it to your boss or stakeholders.""")
+                st.markdown(f"**Rationale:**\n\n**Issue:** Failed to beat capital cost hurdle or budget constraint.\n\n**Risk Score:** {row['Risk_Score']}\n\n**Decision:** This proposal has been deferred. Despite potential merit, it either possesses a risk profile that dilutes the portfolio's efficiency or it offers a lower marginal return compared to other available investment options within the current budget cap.")
+    render_analysis("""These automated investment memos serve as a transparent audit trail for stakeholder communication. By explicitly stating the financial metrics (NPV, Risk Score) and the strategic logic behind every approval and rejection, these documents bridge the gap between complex algorithmic decision-making and executive accountability.""")

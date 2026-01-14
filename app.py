@@ -334,9 +334,17 @@ def reset_data_callback():
 # 4. Sidebar & Layout
 # ----------------------------------------------------
 with st.sidebar:
-    # --- BRANDING LOGO (UPDATED) ---
-    # Switched to a white/light icon for visibility on dark background
-    st.image("https://cdn-icons-png.flaticon.com/512/2910/2910310.png", width=80) 
+    # --- BRANDING LOGO (FIXED VISIBILITY) ---
+    # We use an HTML container with a white background to guarantee the logo pops.
+    st.markdown(
+        """
+        <div style="background-color: rgba(255, 255, 255, 0.9); padding: 20px; border-radius: 10px; margin-bottom: 20px; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
+            <img src="https://cdn-icons-png.flaticon.com/512/2910/2910312.png" width="100" style="display: block; margin-left: auto; margin-right: auto;">
+            <p style="color: #0f172a; font-weight: bold; margin-top: 10px; font-size: 14px;">CAPITALIQ ORGANIZATION</p>
+        </div>
+        """, 
+        unsafe_allow_html=True
+    )
     
     st.title("CAPITALIQ-AI")
     st.caption("Strategic Portfolio Optimizer")

@@ -5,3 +5,4 @@ plotly
 scikit-learn
 pulp
 fpdf
+google-generativeai

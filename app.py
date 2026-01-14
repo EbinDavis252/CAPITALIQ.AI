@@ -192,19 +192,19 @@ with st.sidebar:
     st.caption("Strategic Portfolio Optimizer")
     st.markdown("---")
     
-    # --- AUTO-REDIRECT LOGIC ---
-    # Ensure session state for navigation exists
+    # --- NAVIGATION LOGIC ---
+    # 1. Initialize session state for page selection if it doesn't exist
     if "page_selection" not in st.session_state:
         st.session_state.page_selection = "Home & Data"
 
-    # Define pages
+    # 2. Define Pages
     pages = ["Home & Data", "Executive Summary", "AI Insights", "Efficient Frontier", "Optimization Report", "Strategic 3D Map", "Scenario Manager", "AI Deal Memos"]
 
-    # Navigation Widget (Controlled by Session State)
+    # 3. Create the Radio Button linked to Session State
     selected_page = st.radio(
         "NAVIGATION", 
         pages,
-        key="page_selection", # Bind to state
+        key="page_selection", # This binds the widget to st.session_state['page_selection']
         label_visibility="collapsed"
     )
     
@@ -250,7 +250,6 @@ if selected_page == "Home & Data":
         3. **Analyze** the optimized portfolio across various strategic dimensions.
         """)
         
-        # Template Downloads
         h_temp, p_temp = get_templates()
         c1, c2 = st.columns(2)
         c1.download_button("Download Train Template", h_temp.to_csv(index=False), "train_template.csv")
@@ -259,13 +258,12 @@ if selected_page == "Home & Data":
     with col_setup:
         st.markdown("#### Initialize System")
         
-        # Callback to disable demo mode if user uploads
-        def disable_demo():
-            st.session_state['use_demo'] = False
-
+        # We use a container to organize uploads
         with st.container():
-            hist_file = st.file_uploader("1. Training Data (History)", type=["csv"], key="u_hist", on_change=disable_demo)
-            prop_file = st.file_uploader("2. Proposal Data (New)", type=["csv"], key="u_prop", on_change=disable_demo)
+            # Note: We do NOT rely on callbacks here to avoid complex state management issues.
+            # We simply check if files are present in the logic below.
+            hist_file = st.file_uploader("1. Training Data (History)", type=["csv"], key="u_hist")
+            prop_file = st.file_uploader("2. Proposal Data (New)", type=["csv"], key="u_prop")
             
             if not hist_file and not prop_file:
                 st.markdown("---")
@@ -273,7 +271,8 @@ if selected_page == "Home & Data":
                     st.session_state['use_demo'] = True
                     st.rerun()
 
-    # Data Processing
+    # --- PROCESSING LOGIC ---
+    # Determine Source
     data_source = None
     if st.session_state.get('use_demo', False):
         df_hist, df_prop = get_templates()
@@ -283,34 +282,42 @@ if selected_page == "Home & Data":
         df_prop = pd.read_csv(prop_file)
         data_source = "upload"
     
-    # If valid data exists and we haven't processed it yet (or source changed)
-    if data_source and ('df_prop' not in st.session_state or st.session_state.get('data_source') != data_source):
-        with st.spinner("Processing Data & Training Models..."):
-            rf_roi, feature_imp = train_models(df_hist)
-            features = ["Investment_Capital", "Duration_Months", "Risk_Score", "Strategic_Alignment", "Market_Trend_Index"]
-            df_prop["Pred_ROI"] = rf_roi.predict(df_prop[features])
-            
-            # Save to State
-            st.session_state['df_prop'] = df_prop
-            st.session_state['feature_imp'] = feature_imp
-            st.session_state['data_source'] = data_source
-            
-            # --- AUTO-REDIRECT TRIGGER ---
-            st.session_state.page_selection = "Executive Summary"
-            st.rerun()
+    # Execution Block: If data is ready and we haven't processed this specific batch yet
+    if data_source:
+        # Check if this is a NEW load or just a refresh
+        current_source_state = st.session_state.get('data_source')
+        
+        if current_source_state != data_source:
+            with st.spinner("Processing Data & Training Models..."):
+                rf_roi, feature_imp = train_models(df_hist)
+                features = ["Investment_Capital", "Duration_Months", "Risk_Score", "Strategic_Alignment", "Market_Trend_Index"]
+                df_prop["Pred_ROI"] = rf_roi.predict(df_prop[features])
+                
+                # Save to Session State
+                st.session_state['df_prop'] = df_prop
+                st.session_state['feature_imp'] = feature_imp
+                st.session_state['data_source'] = data_source
+                
+                # --- AUTO-REDIRECT TRIGGER ---
+                # Update the state variable bound to the radio button
+                st.session_state.page_selection = "Executive Summary"
+                # FORCE RERUN immediately so the UI updates to the new page
+                st.rerun()
 
-# --- SHARED PROCESSING ---
-# This block ensures that if we are not on Home & Data, we have data.
+# --- SHARED DATA CHECK ---
+# If we are NOT on Home, check if data exists. If not, send back to Home.
 if selected_page != "Home & Data" and 'df_prop' not in st.session_state:
-    st.warning("Please load data first.")
-    st.stop()
+    st.warning("⚠️ No data found. Redirecting to Home...")
+    st.session_state.page_selection = "Home & Data"
+    st.rerun()
 
+# Load Data for Dashboards
 if 'df_prop' in st.session_state:
     df_prop = st.session_state['df_prop'].copy()
     feature_imp = st.session_state['feature_imp']
     features = ["Investment_Capital", "Duration_Months", "Risk_Score", "Strategic_Alignment", "Market_Trend_Index"]
 
-    # Dynamic Updates (Recalculate on every interaction)
+    # Dynamic Calculations (Always run to reflect sidebar changes)
     df_prop["Pred_ROI"] = df_prop["Pred_ROI"] * (1 + market_shock)
     df_prop["Dynamic_NPV"] = df_prop.apply(lambda row: calculate_dynamic_npv(row, wacc_input), axis=1)
     df_prop["Efficiency"] = df_prop["Pred_ROI"] / df_prop["Risk_Score"]

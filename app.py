@@ -334,25 +334,35 @@ def reset_data_callback():
 # 4. Sidebar & Layout
 # ----------------------------------------------------
 with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/2910/2910312.png", width=80) 
+    # --- BRANDING LOGO (UPDATED) ---
+    # Switched to a white/light icon for visibility on dark background
+    st.image("https://cdn-icons-png.flaticon.com/512/2910/2910310.png", width=80) 
+    
     st.title("CAPITALIQ-AI")
     st.caption("Strategic Portfolio Optimizer")
     st.markdown("---")
-    if "page_selection" not in st.session_state: st.session_state.page_selection = "Home & Data"
+    
+    if "page_selection" not in st.session_state:
+        st.session_state.page_selection = "Home & Data"
+
     pages = ["Home & Data", "Executive Summary", "AI Insights", "Efficient Frontier", "Optimization Report", "Strategic 3D Map", "Scenario Manager", "AI Deal Memos"]
+
     selected_page = st.radio("NAVIGATION", pages, key="page_selection", label_visibility="collapsed")
+    
     st.markdown("---")
     st.subheader("Constraints & Sandbox")
     budget_input = st.number_input("Budget (INR)", value=15000000.0, step=500000.0)
-    wacc_input = st.slider("WACC (%)", 5.0, 20.0, 10.0) / 100
+    wacc_input = st.slider("WACC (%)", 5.0, 20.0, 10.0, help="Weighted Average Cost of Capital") / 100
     min_dept_spend = st.slider("Min Dept. Allocation (%)", 0, 30, 0) / 100
+    
     max_risk = st.slider("Max Portfolio Risk", 1.0, 10.0, 6.5)
     market_shock = st.slider("Market Scenario", -0.20, 0.20, 0.0, 0.01, format="%+.0f%%")
+    
     st.markdown("---")
     st.button("Reset / Clear All Data", use_container_width=True, on_click=reset_data_callback)
+
     st.markdown("---")
     st.caption("© 2026 CapitalIQ-AI. Enterprise Edition. All Rights Reserved.")
-
 # ----------------------------------------------------
 # 5. Main Content
 # ----------------------------------------------------

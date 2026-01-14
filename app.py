@@ -180,7 +180,6 @@ def process_data_callback():
             
             st.session_state['df_prop'] = df_prop
             st.session_state['feature_imp'] = feature_imp
-            # FORCE NAVIGATION SWITCH
             st.session_state.page_selection = "Executive Summary"
         except Exception as e:
             st.error(f"Error processing files: {e}")
@@ -194,10 +193,13 @@ def load_demo_callback():
     
     st.session_state['df_prop'] = df_prop
     st.session_state['feature_imp'] = feature_imp
-    st.session_state.u_hist = "Demo" # Placeholder
+    st.session_state.u_hist = "Demo"
     st.session_state.u_prop = "Demo"
-    # FORCE NAVIGATION SWITCH
     st.session_state.page_selection = "Executive Summary"
+
+def reset_data_callback():
+    st.session_state.clear()
+    st.session_state.page_selection = "Home & Data"
 
 # ----------------------------------------------------
 # 4. Sidebar & Layout
@@ -223,9 +225,8 @@ with st.sidebar:
     market_shock = st.slider("Market Scenario", -0.20, 0.20, 0.0, 0.01, format="%+.0f%%")
     
     st.markdown("---")
-    if st.button("Reset / Clear All Data", use_container_width=True):
-        st.session_state.clear()
-        st.rerun()
+    # Using callback for reset to ensure page switch happens
+    st.button("Reset / Clear All Data", use_container_width=True, on_click=reset_data_callback)
 
     st.markdown("---")
     st.caption("© 2026 CapitalIQ-AI. Enterprise Edition. All Rights Reserved.")
@@ -237,31 +238,46 @@ with st.sidebar:
 # --- PAGE: HOME & DATA ---
 if selected_page == "Home & Data":
     st.title("Welcome to CapitalIQ-AI")
-    col_intro, col_setup = st.columns([1.5, 1])
     
-    with col_intro:
-        st.markdown("### The Enterprise Standard for AI-Driven Capital Allocation")
-        st.info("""
-        **Workflow:**
-        1. **Upload** historical project data to train the predictive models.
-        2. **Configure** financial constraints (Budget, WACC) in the sidebar.
-        3. **Analyze** the optimized portfolio across various strategic dimensions.
-        """)
-        h_temp, p_temp = get_templates()
-        c1, c2 = st.columns(2)
-        c1.download_button("Download Train Template", h_temp.to_csv(index=False), "train_template.csv")
-        c2.download_button("Download Predict Template", p_temp.to_csv(index=False), "predict_template.csv")
+    # Check if data is already loaded in Session State
+    if 'df_prop' in st.session_state:
+        st.success("✅ Data System Online: Predictive Models Trained & Ready.")
+        st.info("Your dataset is currently loaded in memory. You do not need to re-upload unless you want to change datasets.")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Go to Dashboard", type="primary"):
+                st.session_state.page_selection = "Executive Summary"
+                st.rerun()
+        with col2:
+            if st.button("Unload Current Data"):
+                reset_data_callback()
+                st.rerun()
+    
+    else:
+        # Show Uploaders ONLY if no data is loaded
+        col_intro, col_setup = st.columns([1.5, 1])
+        
+        with col_intro:
+            st.markdown("### The Enterprise Standard for AI-Driven Capital Allocation")
+            st.info("""
+            **Workflow:**
+            1. **Upload** historical project data to train the predictive models.
+            2. **Configure** financial constraints (Budget, WACC) in the sidebar.
+            3. **Analyze** the optimized portfolio across various strategic dimensions.
+            """)
+            h_temp, p_temp = get_templates()
+            c1, c2 = st.columns(2)
+            c1.download_button("Download Train Template", h_temp.to_csv(index=False), "train_template.csv")
+            c2.download_button("Download Predict Template", p_temp.to_csv(index=False), "predict_template.csv")
 
-    with col_setup:
-        st.markdown("#### Initialize System")
-        with st.container():
-            # KEY FIX: on_change calls the processing function immediately
-            st.file_uploader("1. Training Data (History)", type=["csv"], key="u_hist", on_change=process_data_callback)
-            st.file_uploader("2. Proposal Data (New)", type=["csv"], key="u_prop", on_change=process_data_callback)
-            
-            if st.session_state.get('u_hist') is None:
+        with col_setup:
+            st.markdown("#### Initialize System")
+            with st.container():
+                st.file_uploader("1. Training Data (History)", type=["csv"], key="u_hist", on_change=process_data_callback)
+                st.file_uploader("2. Proposal Data (New)", type=["csv"], key="u_prop", on_change=process_data_callback)
+                
                 st.markdown("---")
-                # KEY FIX: on_click calls the demo function immediately
                 st.button("Load Demo Data", type="primary", on_click=load_demo_callback)
 
 # --- SHARED DATA LOGIC ---

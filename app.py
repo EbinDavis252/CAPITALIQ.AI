@@ -649,15 +649,41 @@ elif selected_page == "Scenario Manager":
     with col_save:
         scenario_name = st.text_input("Scenario Name", value="Base Case")
         if st.button("Save Current State"):
-            s_data = {"Name": scenario_name, "WACC": wacc_input, "Budget": budget_input, "NPV": portfolio['Dynamic_NPV'].sum(), "ROI": portfolio['Pred_ROI'].mean(), "Projects": len(portfolio)}
+            s_data = {
+                "Name": scenario_name, 
+                "WACC": wacc_input, 
+                "Budget": budget_input, 
+                "NPV": portfolio['Dynamic_NPV'].sum(), 
+                "ROI": portfolio['Pred_ROI'].mean(), 
+                "Projects": len(portfolio)
+            }
             if 'scenarios' not in st.session_state: st.session_state['scenarios'] = []
             st.session_state['scenarios'].append(s_data)
             st.success(f"Saved {scenario_name}!")
     with col_view:
         if 'scenarios' in st.session_state and st.session_state['scenarios']:
+            # 1. Chart
             fig_comp = generate_combo_scenario_chart(st.session_state['scenarios'])
             st.plotly_chart(fig_comp, use_container_width=True)
-            render_analysis("""The comparative bar chart above allows for stress-testing different strategic assumptions. A divergence between the Blue Bar (Total NPV Wealth) and the Yellow Line (Efficiency) indicates a trade-off. For example, a scenario with high ROI but low NPV often implies a 'Capital Rationing' environment where profitable projects are being rejected due to an overly tight budget.""")
+            
+            # 2. Table (NEW REQUEST)
+            st.markdown("##### Scenario Data Registry")
+            df_scenarios = pd.DataFrame(st.session_state['scenarios'])
+            
+            # Format for clean display
+            df_display = df_scenarios.copy()
+            df_display['Budget'] = df_display['Budget'].apply(lambda x: f"₹{x/1e6:.2f}M")
+            df_display['NPV'] = df_display['NPV'].apply(lambda x: f"₹{x/1e6:.2f}M")
+            df_display['WACC'] = df_display['WACC'].apply(lambda x: f"{x*100:.1f}%")
+            df_display['ROI'] = df_display['ROI'].apply(lambda x: f"{x:.2f}%")
+            
+            st.dataframe(
+                df_display.style.background_gradient(subset=['NPV'], cmap='Blues'), 
+                use_container_width=True, 
+                hide_index=True
+            )
+
+            render_analysis("""The comparative bar chart above allows for stress-testing different strategic assumptions. A divergence between the Blue Bar (Total NPV Wealth) and the Yellow Line (Efficiency) indicates a trade-off. The table below details the exact input variables (WACC, Budget) used to generate these outcomes, providing a clear audit trail of how financial constraints impact the final project count and aggregate returns.""")
         else: st.info("Adjust WACC/Budget in the sidebar, then click 'Save Current State' to compare scenarios.")
 
 # --- PAGE: AI DEAL MEMOS ---

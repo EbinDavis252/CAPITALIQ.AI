@@ -689,15 +689,32 @@ elif selected_page == "Scenario Manager":
 elif selected_page == "AI Deal Memos":
     st.title("AI Investment Memos")
     col_app, col_rej = st.columns(2)
+    # ... inside the "AI Deal Memos" page block ...
+
     with col_app:
         st.subheader("Top Approvals")
         for i, row in portfolio.sort_values(by="Dynamic_NPV", ascending=False).head(3).iterrows():
             with st.expander(f"APPROVED: {row['Project_ID']} ({row['Department']})", expanded=True):
-                st.markdown(f"**Rationale:**\n\n**NPV Contribution:** ₹{row['Dynamic_NPV']/1e5:.1f} Lakhs\n\n**Strategic Fit:** {row['Strategic_Alignment']}/10\n\n**Decision:** This project has been approved because it exceeds the required risk-adjusted return threshold. Its contribution to the aggregate portfolio NPV is significant, and it aligns well with corporate strategic goals, making it a priority for capital allocation.")
+                # Using HTML font tags as a fallback to guarantee visibility
+                st.markdown(f"""
+                <div style='color: #e2e8f0;'>
+                <b>Rationale:</b><br><br>
+                <b>NPV Contribution:</b> ₹{row['Dynamic_NPV']/1e5:.1f} Lakhs<br>
+                <b>Strategic Fit:</b> {row['Strategic_Alignment']}/10<br><br>
+                <b>Decision:</b> This project has been approved because it exceeds the required risk-adjusted return threshold.
+                </div>
+                """, unsafe_allow_html=True)
+
     with col_rej:
         st.subheader("Top Rejections")
         rejected = df_prop[df_prop["Selected"] == 0]
         for i, row in rejected.sort_values(by="Pred_ROI", ascending=False).head(3).iterrows():
             with st.expander(f"REJECTED: {row['Project_ID']} ({row['Department']})"):
-                st.markdown(f"**Rationale:**\n\n**Issue:** Failed to beat capital cost hurdle or budget constraint.\n\n**Risk Score:** {row['Risk_Score']}\n\n**Decision:** This proposal has been deferred. Despite potential merit, it either possesses a risk profile that dilutes the portfolio's efficiency or it offers a lower marginal return compared to other available investment options within the current budget cap.")
-    render_analysis("""These automated investment memos serve as a transparent audit trail for stakeholder communication. By explicitly stating the financial metrics (NPV, Risk Score) and the strategic logic behind every approval and rejection, these documents bridge the gap between complex algorithmic decision-making and executive accountability.""")
+                st.markdown(f"""
+                <div style='color: #e2e8f0;'>
+                <b>Rationale:</b><br><br>
+                <b>Issue:</b> Failed to beat capital cost hurdle or budget constraint.<br>
+                <b>Risk Score:</b> {row['Risk_Score']}<br><br>
+                <b>Decision:</b> This proposal has been deferred due to lower capital efficiency compared to competing options.
+                </div>
+                """, unsafe_allow_html=True)

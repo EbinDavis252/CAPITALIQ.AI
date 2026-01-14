@@ -531,11 +531,8 @@ elif selected_page == "Efficient Frontier":
             if not portfolio.empty:
                 fig_ef.add_trace(go.Scatter(x=[portfolio["Risk_Score"].mean()], y=[portfolio["Pred_ROI"].mean()], mode='markers', marker=dict(color='white', size=15, symbol='star'), name="Selected Portfolio"))
             st.plotly_chart(dark_chart(fig_ef), use_container_width=True)
-            render_analysis("
-
-[Image of Efficient Frontier Curve]
- The White Star is your current portfolio. If it's near the top edge of the cloud, you are mathematically optimized.")
-
+            # FIX: Using triple quotes to safely handle long text
+            render_analysis("""The White Star is your current portfolio. If it's near the top edge of the cloud, you are mathematically optimized.""")
 # --- PAGE: OPTIMIZATION REPORT ---
 elif selected_page == "Optimization Report":
     st.title("Final Investment Schedule")

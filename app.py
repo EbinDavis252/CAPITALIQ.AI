@@ -666,20 +666,27 @@ elif selected_page == "Scenario Manager":
             fig_comp = generate_combo_scenario_chart(st.session_state['scenarios'])
             st.plotly_chart(fig_comp, use_container_width=True)
             
-            # 2. Table (NEW REQUEST)
+            # 2. Table (NEW FIX)
             st.markdown("##### Scenario Data Registry")
             df_scenarios = pd.DataFrame(st.session_state['scenarios'])
             
-            # Format for clean display
+            # Create a clean copy for display
             df_display = df_scenarios.copy()
-            df_display['Budget'] = df_display['Budget'].apply(lambda x: f"₹{x/1e6:.2f}M")
-            df_display['NPV'] = df_display['NPV'].apply(lambda x: f"₹{x/1e6:.2f}M")
-            df_display['WACC'] = df_display['WACC'].apply(lambda x: f"{x*100:.1f}%")
-            df_display['ROI'] = df_display['ROI'].apply(lambda x: f"{x:.2f}%")
-            
+            # Convert large numbers to Millions (Numeric)
+            df_display['Budget'] = df_display['Budget'] / 1e6
+            df_display['NPV'] = df_display['NPV'] / 1e6
+
+            # Style with FORMAT STRINGS (keeps data numeric for gradient)
             st.dataframe(
-                df_display.style.background_gradient(subset=['NPV'], cmap='Blues'), 
-                use_container_width=True, 
+                df_display.style
+                .format({
+                    'Budget': '₹{:.2f}M',
+                    'NPV': '₹{:.2f}M',
+                    'WACC': '{:.1%}',
+                    'ROI': '{:.2f}%'
+                })
+                .background_gradient(subset=['NPV'], cmap='Blues'),
+                use_container_width=True,
                 hide_index=True
             )
 

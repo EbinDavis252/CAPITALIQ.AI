@@ -289,7 +289,8 @@ def generate_ai_memo_text(row, api_key):
     
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-pro')
+        # CHANGED: 'gemini-pro' -> 'gemini-1.5-flash'
+        model = genai.GenerativeModel('gemini-1.5-flash') 
         prompt = f"""
         Act as a cynical Investment Committee member. Analyze this project:
         Desc: {row.get('Project_Description', 'Standard Project')}
@@ -303,7 +304,6 @@ def generate_ai_memo_text(row, api_key):
         return response.text
     except Exception as e:
         return f"AI Error: {str(e)}"
-
 # --- VISUALIZATIONS ---
 
 def generate_professional_waterfall(portfolio):
@@ -604,7 +604,7 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("""
         <div style="text-align: center; font-size: 10px; color: #64748b;">
-            © 2026 KD Technologies.<br>All Rights Reserved.<br>Confidential.
+            © 2026 ED Technologies.<br>All Rights Reserved.<br>Confidential.
         </div>
     """, unsafe_allow_html=True)
 

@@ -539,10 +539,10 @@ elif selected_page == "Efficient Frontier":
                     textposition="top center"
                 ))
             st.plotly_chart(dark_chart(fig_ef), use_container_width=True)
-            render_analysis("
+            render_analysis("""
 
 [Image of Efficient Frontier Curve]
- **The Efficient Frontier:** The colorful cloud represents thousands of possible portfolios. The **White Star** is your current selection. If the star is at the top-left edge of the cloud, you have successfully maximized Return for your level of Risk.")
+ **The Efficient Frontier:** The colorful cloud represents thousands of possible portfolios. The **White Star** is your current selection. If the star is at the top-left edge of the cloud, you have successfully maximized Return for your level of Risk.""")
         else:
             st.error("Simulation failed to find valid portfolios within constraints.")
 
@@ -554,11 +554,11 @@ elif selected_page == "Optimization Report":
         st.dataframe(portfolio[["Project_ID", "Department", "Investment_Capital", "Pred_ROI", "Payback_Years", "Efficiency"]].style.format({"Investment_Capital": "₹{:,.0f}", "Pred_ROI": "{:.1f}%", "Payback_Years": "{:.1f} yrs", "Efficiency": "{:.2f}"}).background_gradient(subset=["Efficiency"], cmap="Greens"), use_container_width=True)
         csv = portfolio.to_csv(index=False).encode('utf-8')
         st.download_button("Export Portfolio (CSV)", csv, "Strategic_Portfolio.csv", "text/csv")
-        render_analysis("**Explanation:** This table lists every project approved for funding. 'Efficiency' is a custom score calculated as (ROI / Risk). High efficiency means you are getting good returns for low risk.")
+        render_analysis("""**Explanation:** This table lists every project approved for funding. 'Efficiency' is a custom score calculated as (ROI / Risk). High efficiency means you are getting good returns for low risk.""")
     with tab2:
         rejected = df_prop[df_prop["Selected"] == 0]
         st.dataframe(rejected[["Project_ID", "Investment_Capital", "Pred_ROI"]], use_container_width=True)
-        render_analysis("**Explanation:** These projects were cut. Usually, this is because they had a low ROI, a very high Risk score, or simply didn't fit into the budget after funding better projects.")
+        render_analysis("""**Explanation:** These projects were cut. Usually, this is because they had a low ROI, a very high Risk score, or simply didn't fit into the budget after funding better projects.""")
 
 # --- PAGE: STRATEGIC 3D MAP ---
 elif selected_page == "Strategic 3D Map":
@@ -584,7 +584,7 @@ elif selected_page == "Strategic 3D Map":
         zaxis_backgroundcolor="rgba(0,0,0,0)",
     ))
     st.plotly_chart(dark_chart(fig_3d), use_container_width=True)
-    render_analysis("**How to Navigate:** Click and drag to rotate the cube. <br>**Goal:** You want to see Green bubbles floating in the top-back-left corner (High Strategy, High ROI, Low Risk). Red bubbles should ideally be clustered in the 'bad' corners (Low Strategy/Low ROI).")
+    render_analysis("""**How to Navigate:** Click and drag to rotate the cube. <br>**Goal:** You want to see Green bubbles floating in the top-back-left corner (High Strategy, High ROI, Low Risk). Red bubbles should ideally be clustered in the 'bad' corners (Low Strategy/Low ROI).""")
 
 # --- PAGE: SCENARIO MANAGER ---
 elif selected_page == "Scenario Manager":
@@ -603,7 +603,7 @@ elif selected_page == "Scenario Manager":
             st.dataframe(s_df.style.format({"NPV": "₹{:,.0f}", "ROI": "{:.1f}%", "WACC": "{:.1f}%"}), use_container_width=True)
             fig_comp = px.bar(s_df, x="Name", y="NPV", color="ROI", title="Scenario NPV Comparison")
             st.plotly_chart(dark_chart(fig_comp), use_container_width=True)
-            render_analysis("**Explanation:** This tool lets you answer 'What If?' questions. Create a 'High Inflation' scenario by raising WACC in the sidebar, then save it here to compare against your 'Base Case'.")
+            render_analysis("""**Explanation:** This tool lets you answer 'What If?' questions. Create a 'High Inflation' scenario by raising WACC in the sidebar, then save it here to compare against your 'Base Case'.""")
         else:
             st.info("Adjust WACC/Budget in the sidebar, then click 'Save Current State' to compare scenarios.")
 
@@ -622,4 +622,4 @@ elif selected_page == "AI Deal Memos":
         for i, row in rejected.sort_values(by="Pred_ROI", ascending=False).head(3).iterrows():
             with st.expander(f"REJECTED: {row['Project_ID']} ({row['Department']})"):
                 st.markdown(f"**Rationale:**\n* **Issue:** Failed to beat capital cost hurdle or budget constraint.\n* **Risk Score:** {row['Risk_Score']}\n* **Decision:** Deferred to next fiscal cycle.")
-    render_analysis("**Explanation:** These memos are auto-generated plain-English explanations. They tell you *why* the AI made the decision, so you can explain it to your boss or stakeholders.")
+    render_analysis("""**Explanation:** These memos are auto-generated plain-English explanations. They tell you *why* the AI made the decision, so you can explain it to your boss or stakeholders.""")

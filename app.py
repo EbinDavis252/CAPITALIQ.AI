@@ -5,10 +5,9 @@ import plotly.express as px
 import plotly.graph_objects as go
 from sklearn.ensemble import RandomForestRegressor
 from scipy.optimize import linprog
-import time
 
 # ----------------------------------------------------
-# 1. Page Configuration & CSS
+# 1. Page Configuration & "Glassmorphism" CSS
 # ----------------------------------------------------
 st.set_page_config(
     page_title="CAPITALIQ-AI™ | Enterprise Edition",
@@ -17,7 +16,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Enhanced CSS for Glassmorphism + Custom Fonts
+# --- THEME ENGINE: GLASSMORPHISM & HIGH CONTRAST ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap');
@@ -32,8 +31,11 @@ st.markdown("""
         background-attachment: fixed;
     }
 
-    h1, h2, h3, h4, h5, h6, p, li, label, .stDataFrame { color: #e2e8f0 !important; }
-
+    /* Text Visibility Fixes (Force White) */
+    h1, h2, h3, h4, h5, h6, .stMarkdown, p, li, span, label, .stDataFrame, .stRadio label {
+        color: #e2e8f0 !important;
+    }
+    
     /* Glass Cards */
     div[data-testid="stMetric"], div[data-testid="stExpander"], div.stDataFrame {
         background-color: rgba(30, 41, 59, 0.6); 
@@ -41,9 +43,10 @@ st.markdown("""
         backdrop-filter: blur(12px);
         border-radius: 12px;
         padding: 15px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
     }
 
-    /* Sidebar Clean-up */
+    /* Sidebar Styling */
     section[data-testid="stSidebar"] {
         background-color: #0b1120; 
         border-right: 1px solid #334155;
@@ -62,11 +65,16 @@ st.markdown("""
         transform: scale(1.02);
         box-shadow: 0 4px 12px rgba(13, 148, 136, 0.4);
     }
+    
+    /* Custom Radio Button (Navigation) */
+    div[role="radiogroup"] > label > div:first-of-type {
+        background-color: #0f172a;
+    }
     </style>
 """, unsafe_allow_html=True)
 
 # ----------------------------------------------------
-# 2. Helper Functions (Caching & Data Generation)
+# 2. Helper Functions (Caching & Logic)
 # ----------------------------------------------------
 
 @st.cache_data
@@ -102,8 +110,12 @@ def train_models(df_hist):
     rf_roi = RandomForestRegressor(n_estimators=200, random_state=42)
     rf_npv = RandomForestRegressor(n_estimators=200, random_state=42)
     
-    rf_roi.fit(df_hist[features], df_hist["Actual_ROI_Pct"])
-    rf_npv.fit(df_hist[features], df_hist["Actual_NPV"])
+    try:
+        rf_roi.fit(df_hist[features], df_hist["Actual_ROI_Pct"])
+        rf_npv.fit(df_hist[features], df_hist["Actual_NPV"])
+    except Exception as e:
+        st.error(f"Training Error: {e}")
+        st.stop()
     
     # Return models and feature importance
     importance = pd.DataFrame({
@@ -114,6 +126,7 @@ def train_models(df_hist):
     return rf_roi, rf_npv, importance
 
 def dark_chart(fig):
+    """Applies a consistent dark theme to Plotly charts."""
     fig.update_layout(
         template="plotly_dark",
         paper_bgcolor="rgba(0,0,0,0)",
@@ -123,13 +136,14 @@ def dark_chart(fig):
     return fig
 
 # ----------------------------------------------------
-# 3. Sidebar Navigation
+# 3. Sidebar: Navigation & Controls
 # ----------------------------------------------------
 with st.sidebar:
     st.title("💎 CAPITALIQ-AI™")
     st.caption("Strategic Portfolio Optimizer")
     st.markdown("---")
     
+    # Navigation
     selected_page = st.radio(
         "Navigation", 
         ["🏠 Home & Data", "🚀 Executive Summary", "🧠 AI Insights", "⚡ Efficient Frontier", "💰 Optimization Report", "🧊 Strategic 3D Map"],
@@ -137,23 +151,33 @@ with st.sidebar:
     )
     
     st.markdown("---")
+    
+    # Strategy Controls (Global)
     st.subheader("⚙️ Constraints")
     budget_input = st.number_input("Budget (₹)", value=15000000.0, step=500000.0)
     max_risk = st.slider("Max Portfolio Risk", 1.0, 10.0, 6.5)
     market_shock = st.slider("Market Scenario", -0.20, 0.20, 0.0, 0.01, format="%+.0f%%")
+    
+    st.markdown("---")
+    
+    # Data Reset Control
+    st.markdown("### 🛠️ Data Controls")
+    if st.button("🔄 Reset / Clear All Data", use_container_width=True):
+        st.session_state.clear()
+        st.rerun()
 
 # ----------------------------------------------------
 # 4. Main App Logic
 # ----------------------------------------------------
 
-# --- PAGE: HOME & DATA (The "Landing Page") ---
+# --- PAGE: HOME & DATA (The Landing Page) ---
 if selected_page == "🏠 Home & Data":
     st.title("👋 Welcome to CapitalIQ-AI")
-    st.markdown("### The Enterprise Standard for AI-Driven Capital Allocation")
     
     col_intro, col_setup = st.columns([1.5, 1])
     
     with col_intro:
+        st.markdown("### The Enterprise Standard for AI-Driven Capital Allocation")
         st.info("""
         **How it works:**
         1. **Upload** your historical project data (for training) and new proposals.
@@ -169,61 +193,92 @@ if selected_page == "🏠 Home & Data":
 
     with col_setup:
         st.markdown("#### 📂 Initialize System")
+        
+        # --- UPLOAD LOGIC ---
+        # Callback to force disable demo mode if user uploads files
+        def disable_demo():
+            st.session_state['use_demo'] = False
+
         with st.container():
-            hist_file = st.file_uploader("1. Training Data (History)", type=["csv"])
-            prop_file = st.file_uploader("2. Proposal Data (New)", type=["csv"])
+            hist_file = st.file_uploader("1. Training Data (History)", type=["csv"], key="u_hist", on_change=disable_demo)
+            prop_file = st.file_uploader("2. Proposal Data (New)", type=["csv"], key="u_prop", on_change=disable_demo)
             
-            # Button to use Demo Data if files aren't uploaded
-            if hist_file is None and prop_file is None:
+            # Show "Load Demo" ONLY if no files are uploaded
+            if not hist_file and not prop_file:
                 st.markdown("---")
-                if st.button("🚀 Load Demo Data"):
+                if st.button("🚀 Load Demo Data", type="primary"):
                     st.session_state['use_demo'] = True
                     st.rerun()
 
-    # Data Loading Logic
-    if 'use_demo' in st.session_state and st.session_state['use_demo']:
-        df_hist, df_prop = get_templates() # Use generated data
+    # --- DATA PROCESSING LOGIC ---
+    data_source = None
+    
+    # 1. Check if user wants Demo Data
+    if st.session_state.get('use_demo', False):
+        df_hist, df_prop = get_templates()
         st.success("✅ Demo Data Loaded! Navigate to 'Executive Summary' to see results.")
+        data_source = "demo"
+
+    # 2. Check if user uploaded files (Prioritized)
     elif hist_file and prop_file:
         df_hist = pd.read_csv(hist_file)
         df_prop = pd.read_csv(prop_file)
-        st.success("✅ Custom Data Uploaded Successfully!")
+        st.success("✅ Custom Data Uploaded & Saved!")
+        data_source = "upload"
+
+    # 3. No data yet
     else:
-        st.warning("⚠️ Waiting for data streams...")
-        st.stop() # Only stop here if no demo and no upload
+        st.warning("⚠️ Waiting for data streams... Upload files or Click 'Load Demo Data'")
+        st.stop()
 
-    # --- CORE PROCESSING (Runs once data is available) ---
-    features = ["Investment_Capital", "Duration_Months", "Risk_Score", "Strategic_Alignment", "Market_Trend_Index"]
-    
-    # Train Models (Cached)
-    rf_roi, rf_npv, feature_imp = train_models(df_hist)
-    
-    # Predict
-    df_prop["Pred_ROI"] = rf_roi.predict(df_prop[features]) * (1 + market_shock)
-    df_prop["Pred_NPV"] = rf_npv.predict(df_prop[features]) * (1 + market_shock)
-    df_prop["Efficiency"] = df_prop["Pred_ROI"] / df_prop["Risk_Score"]
-    
-    # Save to session state so other pages can access
-    st.session_state['df_prop'] = df_prop
-    st.session_state['feature_imp'] = feature_imp
+    # --- PERSISTENCE: Save to Session State ---
+    # Only re-run training if data source changes or first run
+    if 'df_prop' not in st.session_state or st.session_state.get('data_source') != data_source:
+        
+        with st.spinner("⚙️ Training Models & Processing Data..."):
+            # Train
+            rf_roi, rf_npv, feature_imp = train_models(df_hist)
+            
+            # Predict (Initial pass)
+            features = ["Investment_Capital", "Duration_Months", "Risk_Score", "Strategic_Alignment", "Market_Trend_Index"]
+            df_prop["Pred_ROI"] = rf_roi.predict(df_prop[features])
+            df_prop["Pred_NPV"] = rf_npv.predict(df_prop[features])
+            
+            # Save everything
+            st.session_state['df_prop'] = df_prop
+            st.session_state['feature_imp'] = feature_imp
+            st.session_state['rf_roi'] = rf_roi # Save models for dynamic scenario updates
+            st.session_state['rf_npv'] = rf_npv
+            st.session_state['data_source'] = data_source
+            
+            # Refresh
+            st.rerun()
 
-# --- CHECK FOR DATA BEFORE LOADING OTHER PAGES ---
+# --- SHARED PROCESSING FOR DASHBOARD PAGES ---
+# Check if data exists
 if 'df_prop' not in st.session_state:
-    st.warning("Please go to '🏠 Home & Data' and load data first.")
+    st.warning("⚠️ Please go to '🏠 Home & Data' and load data first.")
     st.stop()
 
-df_prop = st.session_state['df_prop']
+# Retrieve from state
+df_prop = st.session_state['df_prop'].copy() # Copy to avoid mutating state directly on every run
 feature_imp = st.session_state['feature_imp']
 
-# --- OPTIMIZATION ENGINE (Runs dynamically based on Sidebar Inputs) ---
-# We run this on every reload because budget/risk constraints change frequently
+# --- DYNAMIC UPDATES (SCENARIO ANALYSIS) ---
+# We recalculate these every time because 'market_shock' changes in the sidebar
+features = ["Investment_Capital", "Duration_Months", "Risk_Score", "Strategic_Alignment", "Market_Trend_Index"]
+df_prop["Pred_ROI"] = df_prop["Pred_ROI"] * (1 + market_shock)
+df_prop["Pred_NPV"] = df_prop["Pred_NPV"] * (1 + market_shock)
+df_prop["Efficiency"] = df_prop["Pred_ROI"] / df_prop["Risk_Score"]
+
+# --- OPTIMIZATION ENGINE ---
 c = -df_prop["Pred_NPV"].values 
-A = [df_prop["Investment_Capital"].values, df_prop["Risk_Score"].values]
-b = [budget_input, max_risk * len(df_prop)] # Simplified risk constraint approach
+A = [df_prop["Investment_Capital"].values]
+b = [budget_input]
 bounds = [(0, 1) for _ in range(len(df_prop))]
 
-# Optimize
-res = linprog(c, A_ub=[df_prop["Investment_Capital"].values], b_ub=[budget_input], bounds=bounds, method='highs')
+# Run Linear Programming
+res = linprog(c, A_ub=A, b_ub=b, bounds=bounds, method='highs')
 df_prop["Selected"] = res.x.round(0) if res.success else 0
 portfolio = df_prop[df_prop["Selected"] == 1]
 
@@ -234,7 +289,7 @@ portfolio = df_prop[df_prop["Selected"] == 1]
 if selected_page == "🚀 Executive Summary":
     st.title("📊 Executive Dashboard")
     
-    # Top KPIS
+    # KPIs
     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
     kpi1.metric("Projects Funded", f"{len(portfolio)}", f"/{len(df_prop)} Proposals")
     kpi2.metric("Capital Deployed", f"₹{portfolio['Investment_Capital'].sum()/1e6:.2f}M", f"Utilization: {portfolio['Investment_Capital'].sum()/budget_input*100:.1f}%")
@@ -247,18 +302,21 @@ if selected_page == "🚀 Executive Summary":
     c1, c2 = st.columns([2, 1])
     with c1:
         st.subheader("📈 Capital Allocation by Department")
-        fig = px.bar(portfolio, x="Department", y="Investment_Capital", color="Pred_ROI", 
-                     title="Budget Distribution & ROI Heatmap", text_auto='.2s')
-        st.plotly_chart(dark_chart(fig), use_container_width=True)
+        if not portfolio.empty:
+            fig = px.bar(portfolio, x="Department", y="Investment_Capital", color="Pred_ROI", 
+                         title="Budget Distribution & ROI Heatmap", text_auto='.2s')
+            st.plotly_chart(dark_chart(fig), use_container_width=True)
+        else:
+            st.info("No projects selected. Try increasing the budget.")
     
     with c2:
         st.subheader("⚡ Top ROI Drivers")
-        # Display Feature Importance
-        # FIX: Changed cmap='Tealgrn' to cmap='Greens' because pandas uses Matplotlib colors
+        # Fixed cmap to 'Greens' for Matplotlib compatibility
         st.dataframe(
             feature_imp.head(5).style.background_gradient(cmap='Greens'),
             use_container_width=True, hide_index=True
         )
+
 elif selected_page == "🧠 AI Insights":
     st.subheader("🧠 The Brain Behind the Budget")
     
@@ -267,7 +325,6 @@ elif selected_page == "🧠 AI Insights":
         st.markdown("##### 🔍 Feature Importance Analysis")
         fig_imp = px.bar(feature_imp, x="Importance", y="Feature", orientation='h', color="Importance")
         st.plotly_chart(dark_chart(fig_imp), use_container_width=True)
-        st.caption("These factors heavily influenced the AI's ROI predictions.")
         
     with col2:
         st.markdown("##### 🎯 Prediction Accuracy vs Risk")
@@ -279,14 +336,14 @@ elif selected_page == "⚡ Efficient Frontier":
     st.subheader("⚡ Efficient Frontier Simulation")
     st.markdown("Running Monte Carlo Simulation (1,000 Iterations)...")
     
-    # Progress Bar for Professional Feel
+    # Progress Bar
     progress_bar = st.progress(0)
     
     results = []
     total_cap = df_prop["Investment_Capital"].sum()
     avg_p = min(0.5, budget_input / (total_cap + 1))
     
-    # Optimized simulation loop
+    # Simulation Loop
     for i in range(1000):
         mask = np.random.rand(len(df_prop)) < avg_p
         sample = df_prop[mask]
@@ -298,19 +355,22 @@ elif selected_page == "⚡ Efficient Frontier":
             })
         if i % 100 == 0: progress_bar.progress(i/1000)
     
-    progress_bar.empty() # Remove bar when done
+    progress_bar.empty() 
     
     sim_df = pd.DataFrame(results)
-    fig_ef = px.scatter(sim_df, x="Risk", y="Return", color="NPV", title="Optimal Risk/Return Profiles")
-    
-    # Add Current Portfolio Marker
-    if not portfolio.empty:
-        fig_ef.add_trace(go.Scatter(
-            x=[portfolio["Risk_Score"].mean()], y=[portfolio["Pred_ROI"].mean()],
-            mode='markers', marker=dict(color='white', size=15, symbol='star'), name="Selected Portfolio"
-        ))
-    
-    st.plotly_chart(dark_chart(fig_ef), use_container_width=True)
+    if not sim_df.empty:
+        fig_ef = px.scatter(sim_df, x="Risk", y="Return", color="NPV", title="Optimal Risk/Return Profiles")
+        
+        # Add Current Portfolio Marker
+        if not portfolio.empty:
+            fig_ef.add_trace(go.Scatter(
+                x=[portfolio["Risk_Score"].mean()], y=[portfolio["Pred_ROI"].mean()],
+                mode='markers', marker=dict(color='white', size=15, symbol='star'), name="Selected Portfolio"
+            ))
+        
+        st.plotly_chart(dark_chart(fig_ef), use_container_width=True)
+    else:
+        st.error("Simulation failed to find valid portfolios. Check constraints.")
 
 elif selected_page == "💰 Optimization Report":
     st.subheader("📋 Final Investment Schedule")

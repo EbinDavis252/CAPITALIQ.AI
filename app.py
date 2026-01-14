@@ -239,7 +239,7 @@ with st.sidebar:
 if selected_page == "Home & Data":
     st.title("Welcome to CapitalIQ-AI")
     
-    # Check if data is already loaded in Session State
+    # Persistence Check
     if 'df_prop' in st.session_state:
         st.success("✅ Data System Online: Predictive Models Trained & Ready.")
         st.info("Your dataset is currently loaded in memory. You do not need to re-upload unless you want to change datasets.")
@@ -255,9 +255,7 @@ if selected_page == "Home & Data":
                 st.rerun()
     
     else:
-        # Show Uploaders ONLY if no data is loaded
         col_intro, col_setup = st.columns([1.5, 1])
-        
         with col_intro:
             st.markdown("### The Enterprise Standard for AI-Driven Capital Allocation")
             st.info("""
@@ -321,43 +319,78 @@ if selected_page == "Executive Summary":
 
 # --- PAGE: AI INSIGHTS ---
 elif selected_page == "AI Insights":
-    st.title("AI & Model Insights")
+    st.title("AI & Model Analytics")
+    
+    # 1. Feature Importance (Enhanced)
     col1, col2 = st.columns(2)
     with col1:
-        st.markdown("##### Feature Importance")
-        fig_imp = px.bar(feature_imp, x="Importance", y="Feature", orientation='h', color="Importance")
+        st.markdown("##### 1. Predictive Drivers")
+        fig_imp = px.bar(feature_imp, x="Importance", y="Feature", orientation='h', color="Importance", color_continuous_scale="Teal")
         st.plotly_chart(dark_chart(fig_imp), use_container_width=True)
-        render_analysis("This graph reveals the 'Brain' of the AI model. It shows which factors (like Investment Size or Duration) the AI prioritizes when predicting success.")
+        render_analysis("This chart identifies which variables the AI considers 'signals' versus 'noise'. The longest bars represent the critical success factors for your dataset.")
+        
     with col2:
-        st.markdown("##### Prediction Accuracy vs Risk")
-        fig_scat = px.scatter(df_prop, x="Risk_Score", y="Pred_ROI", size="Investment_Capital", color="Department", hover_name="Project_ID")
-        st.plotly_chart(dark_chart(fig_scat), use_container_width=True)
-        render_analysis("This scatter plot correlates Risk (X-axis) with Projected ROI (Y-axis). The most desirable projects are in the 'Top-Left' quadrant (High Return, Low Risk).")
+        st.markdown("##### 2. Multi-Dimensional Profile (Parallel Coordinates)")
+        # Normalize data for better parallel visualization if needed, but raw is often fine for finance
+        fig_par = px.parallel_coordinates(
+            df_prop, 
+            dimensions=["Risk_Score", "Strategic_Alignment", "Pred_ROI", "Investment_Capital"],
+            color="Pred_ROI",
+            color_continuous_scale=px.colors.diverging.Tealrose,
+        )
+        st.plotly_chart(dark_chart(fig_par), use_container_width=True)
+        render_analysis("Trace the lines to see project profiles. For example, do projects with 'High Risk' (Left Axis) tend to flow towards 'High ROI' (Right Axis)? This helps identify non-linear relationships.")
+
+    st.markdown("---")
+    
+    # 3. Correlation Heatmap
+    st.markdown("##### 3. Strategic Correlation Matrix")
+    corr_cols = ["Investment_Capital", "Duration_Months", "Risk_Score", "Strategic_Alignment", "Pred_ROI", "Dynamic_NPV"]
+    corr_matrix = df_prop[corr_cols].corr()
+    
+    fig_corr = px.imshow(
+        corr_matrix, 
+        text_auto=".2f", 
+        color_continuous_scale="RdBu_r", 
+        aspect="auto",
+        origin="lower"
+    )
+    st.plotly_chart(dark_chart(fig_corr), use_container_width=True)
+    render_analysis("This heatmap reveals hidden connections. A strong positive number (Blue) means variables move together; a negative number (Red) means they move inversely. Check the intersection of 'Risk_Score' and 'Pred_ROI' to validate your risk-return hypothesis.")
+
 
 # --- PAGE: EFFICIENT FRONTIER ---
 elif selected_page == "Efficient Frontier":
     st.title("Efficient Frontier Simulation")
-    st.markdown("Running Monte Carlo Simulation (1,000 Iterations)...")
-    progress_bar = st.progress(0)
-    results = []
-    total_cap = df_prop["Investment_Capital"].sum()
-    avg_p = min(0.5, budget_input / (total_cap + 1))
-    for i in range(1000):
-        mask = np.random.rand(len(df_prop)) < avg_p
-        sample = df_prop[mask]
-        if not sample.empty and sample["Investment_Capital"].sum() <= budget_input:
-            results.append({"Risk": sample["Risk_Score"].mean(), "Return": sample["Pred_ROI"].mean(), "NPV": sample["Dynamic_NPV"].sum()})
-        if i % 100 == 0: progress_bar.progress(i/1000)
-    progress_bar.empty()
-    sim_df = pd.DataFrame(results)
-    if not sim_df.empty:
-        fig_ef = px.scatter(sim_df, x="Risk", y="Return", color="NPV", title="Optimal Risk/Return Profiles")
-        if not portfolio.empty:
-            fig_ef.add_trace(go.Scatter(x=[portfolio["Risk_Score"].mean()], y=[portfolio["Pred_ROI"].mean()], mode='markers', marker=dict(color='white', size=15, symbol='star'), name="Selected Portfolio"))
-        st.plotly_chart(dark_chart(fig_ef), use_container_width=True)
-        render_analysis("The 'Efficient Frontier' represents the set of optimal portfolios. The White Star represents your current AI-selected portfolio. If the star is on the upper edge, your allocation is mathematically optimal.")
-    else:
-        st.error("Simulation failed.")
+    
+    # Slider for Iterations
+    sim_runs = st.slider("Monte Carlo Iterations", min_value=100, max_value=5000, value=1000, step=100, help="Higher iterations provide more statistical accuracy but take longer to compute.")
+    
+    if st.button(f"Run {sim_runs} Simulation Scenarios"):
+        st.markdown(f"Simulating {sim_runs} portfolio combinations...")
+        progress_bar = st.progress(0)
+        results = []
+        total_cap = df_prop["Investment_Capital"].sum()
+        avg_p = min(0.5, budget_input / (total_cap + 1))
+        
+        for i in range(sim_runs):
+            mask = np.random.rand(len(df_prop)) < avg_p
+            sample = df_prop[mask]
+            if not sample.empty and sample["Investment_Capital"].sum() <= budget_input:
+                results.append({"Risk": sample["Risk_Score"].mean(), "Return": sample["Pred_ROI"].mean(), "NPV": sample["Dynamic_NPV"].sum()})
+            if i % 50 == 0: progress_bar.progress(min(i/sim_runs, 1.0))
+        
+        progress_bar.empty()
+        
+        sim_df = pd.DataFrame(results)
+        if not sim_df.empty:
+            fig_ef = px.scatter(sim_df, x="Risk", y="Return", color="NPV", title="Optimal Risk/Return Profiles", color_continuous_scale="Viridis")
+            if not portfolio.empty:
+                fig_ef.add_trace(go.Scatter(x=[portfolio["Risk_Score"].mean()], y=[portfolio["Pred_ROI"].mean()], mode='markers', marker=dict(color='white', size=15, symbol='star'), name="Selected Portfolio"))
+            st.plotly_chart(dark_chart(fig_ef), use_container_width=True)
+            render_analysis("The 'Efficient Frontier' represents the set of optimal portfolios. The White Star represents your current AI-selected portfolio. If the star is on the upper edge, your allocation is mathematically optimal.")
+        else:
+            st.error("Simulation failed to find valid portfolios within constraints.")
 
 # --- PAGE: OPTIMIZATION REPORT ---
 elif selected_page == "Optimization Report":

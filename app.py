@@ -4,6 +4,7 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.preprocessing import MinMaxScaler
 import pulp
 
 # ----------------------------------------------------
@@ -321,7 +322,7 @@ if selected_page == "Executive Summary":
 elif selected_page == "AI Insights":
     st.title("AI & Model Analytics")
     
-    # 1. Feature Importance (Enhanced)
+    # 1. Feature Importance
     col1, col2 = st.columns(2)
     with col1:
         st.markdown("##### 1. Predictive Drivers")
@@ -330,16 +331,47 @@ elif selected_page == "AI Insights":
         render_analysis("This chart identifies which variables the AI considers 'signals' versus 'noise'. The longest bars represent the critical success factors for your dataset.")
         
     with col2:
-        st.markdown("##### 2. Multi-Dimensional Profile (Parallel Coordinates)")
-        # Normalize data for better parallel visualization if needed, but raw is often fine for finance
-        fig_par = px.parallel_coordinates(
-            df_prop, 
-            dimensions=["Risk_Score", "Strategic_Alignment", "Pred_ROI", "Investment_Capital"],
-            color="Pred_ROI",
-            color_continuous_scale=px.colors.diverging.Tealrose,
+        st.markdown("##### 2. The Shape of Success (Radar Profile)")
+        
+        # Prepare Radar Data
+        radar_data = df_prop.groupby("Selected")[["Risk_Score", "Strategic_Alignment", "Pred_ROI"]].mean().reset_index()
+        # Scale for visualization if needed, but assuming roughly compatible ranges
+        categories = ["Risk", "Strategy", "ROI"]
+        
+        fig_radar = go.Figure()
+        
+        # Funded Trace
+        if 1 in radar_data["Selected"].values:
+            row_funded = radar_data[radar_data["Selected"] == 1].iloc[0]
+            fig_radar.add_trace(go.Scatterpolar(
+                r=[row_funded["Risk_Score"], row_funded["Strategic_Alignment"], row_funded["Pred_ROI"]],
+                theta=categories,
+                fill='toself',
+                name='Funded (Avg)',
+                line_color='#00e676'
+            ))
+
+        # Rejected Trace
+        if 0 in radar_data["Selected"].values:
+            row_rej = radar_data[radar_data["Selected"] == 0].iloc[0]
+            fig_radar.add_trace(go.Scatterpolar(
+                r=[row_rej["Risk_Score"], row_rej["Strategic_Alignment"], row_rej["Pred_ROI"]],
+                theta=categories,
+                fill='toself',
+                name='Rejected (Avg)',
+                line_color='#ff1744'
+            ))
+
+        fig_radar.update_layout(
+            polar=dict(radialaxis=dict(visible=True, range=[0, 10])), # Assuming 0-10 scale approximation
+            showlegend=True,
+            template="plotly_dark",
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="#e2e8f0")
         )
-        st.plotly_chart(dark_chart(fig_par), use_container_width=True)
-        render_analysis("Trace the lines to see project profiles. For example, do projects with 'High Risk' (Left Axis) tend to flow towards 'High ROI' (Right Axis)? This helps identify non-linear relationships.")
+        st.plotly_chart(fig_radar, use_container_width=True)
+        render_analysis("This Radar Chart compares the average profile of a 'Winning' project vs a 'Rejected' one. The Green area represents success. Ideally, you want to see the Green area stretching towards High Strategy and High ROI, while maintaining manageable Risk.")
 
     st.markdown("---")
     

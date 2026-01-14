@@ -4,8 +4,8 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.preprocessing import MinMaxScaler
 import pulp
-from io import BytesIO
 
 # ----------------------------------------------------
 # 1. Page Configuration & CSS
@@ -90,8 +90,9 @@ st.markdown("""
 # 2. Helper Functions (Logic & AI)
 # ----------------------------------------------------
 
+# --- NEW: Data Validation Helper ---
 def standardize_columns(df):
-    """Maps various user inputs to system standard names & handles missing data."""
+    """Maps various user inputs to system standard names."""
     column_map = {
         'Capex': 'Investment_Capital', 'Cost': 'Investment_Capital', 'Budget': 'Investment_Capital',
         'Return': 'Actual_ROI_Pct', 'ROI': 'Actual_ROI_Pct',
@@ -99,15 +100,9 @@ def standardize_columns(df):
         'Risk': 'Risk_Score', 'Dept': 'Department'
     }
     df = df.rename(columns=column_map)
-    
-    # Fill numeric NaNs with median to prevent crashes
+    # Fill numeric NaNs with median
     numeric_cols = df.select_dtypes(include=np.number).columns
     df[numeric_cols] = df[numeric_cols].fillna(df[numeric_cols].median())
-    
-    # Ensure ID exists
-    if "Project_ID" not in df.columns:
-        df["Project_ID"] = [f"P-{i:03d}" for i in range(len(df))]
-        
     return df
 
 @st.cache_data
@@ -140,8 +135,7 @@ def train_models(df_hist):
     features = ["Investment_Capital", "Duration_Months", "Risk_Score", "Strategic_Alignment", "Market_Trend_Index"]
     # Ensure features exist
     for f in features:
-        if f not in df_hist.columns:
-            df_hist[f] = 0
+        if f not in df_hist.columns: df_hist[f] = 0
             
     rf_roi = RandomForestRegressor(n_estimators=200, random_state=42)
     try:
@@ -160,9 +154,10 @@ def train_models(df_hist):
 def calculate_dynamic_npv(row, wacc_rate):
     """Calculates NPV based on WACC."""
     total_return_value = row['Investment_Capital'] * (1 + (row['Pred_ROI'] / 100))
-    if row['Duration_Months'] == 0: row['Duration_Months'] = 12 # Safety
-    annual_cash_flow = total_return_value / (row['Duration_Months'] / 12)
-    years = row['Duration_Months'] / 12
+    # Avoid div by zero
+    duration = max(row['Duration_Months'], 1)
+    annual_cash_flow = total_return_value / (duration / 12)
+    years = duration / 12
     dcf = 0
     for t in range(1, int(years) + 2):
         if t <= years:
@@ -173,6 +168,7 @@ def calculate_dynamic_npv(row, wacc_rate):
                 dcf += (annual_cash_flow * remaining_fraction) / ((1 + wacc_rate) ** t)
     return dcf - row['Investment_Capital']
 
+# --- NEW: Payback Calculator ---
 def calculate_payback(row):
     """Calculates Payback Period in Years."""
     total_return_value = row['Investment_Capital'] * (1 + (row['Pred_ROI'] / 100))
@@ -180,106 +176,50 @@ def calculate_payback(row):
     if annual_cash_flow <= 0: return 99.9 
     return round(row['Investment_Capital'] / annual_cash_flow, 2)
 
+# --- UPDATED: Optimization with Constraints ---
 def run_advanced_optimization(df, budget, min_dept_alloc_pct=0.0):
-    """
-    Advanced Optimization using PuLP.
-    INCLUDES: Budget Cap, Mandatory Projects (if any), and Departmental Minimums.
-    """
+    """Advanced Optimization using PuLP with Dept Constraints."""
     prob = pulp.LpProblem("Capital_Allocation", pulp.LpMaximize)
     selection_vars = pulp.LpVariable.dicts("Select", df.index, cat='Binary')
     
-    # 1. Objective: Maximize NPV
     prob += pulp.lpSum([df.loc[i, "Dynamic_NPV"] * selection_vars[i] for i in df.index])
-    
-    # 2. Constraint: Hard Budget Cap
     prob += pulp.lpSum([df.loc[i, "Investment_Capital"] * selection_vars[i] for i in df.index]) <= budget
     
-    # 3. Constraint: Departmental Balance (Strategic Constraint)
-    # Ensure each department gets at least X% of the total budget if possible
+    # NEW: Departmental Balance Constraint
     if min_dept_alloc_pct > 0 and 'Department' in df.columns:
         departments = df['Department'].unique()
         for dept in departments:
             dept_indices = df[df['Department'] == dept].index
-            # Only apply if the department requests enough to actually meet the min
-            dept_total_req = df.loc[dept_indices, "Investment_Capital"].sum()
+            dept_req = df.loc[dept_indices, "Investment_Capital"].sum()
             target_min = budget * min_dept_alloc_pct
-            
-            if dept_total_req >= target_min:
+            # Only enforce if dept actually requested enough
+            if dept_req >= target_min:
                 prob += pulp.lpSum([df.loc[i, "Investment_Capital"] * selection_vars[i] for i in dept_indices]) >= target_min
 
     prob.solve(pulp.PULP_CBC_CMD(msg=0))
-    
-    # Check Status
-    if pulp.LpStatus[prob.status] != 'Optimal':
-        st.warning("⚠️ Constraints too strict (e.g., Dept Minimums). Optimization relaxed to Best Effort.")
-    
     df["Selected"] = [int(selection_vars[i].varValue) if selection_vars[i].varValue is not None else 0 for i in df.index]
     return df
 
-def generate_tornado_chart(portfolio, wacc_current):
+# --- NEW: Tornado Chart ---
+def generate_tornado_chart(portfolio, wacc):
     """Generates a Sensitivity Tornado Chart."""
     base_npv = portfolio['Dynamic_NPV'].sum()
-    total_capex = portfolio['Investment_Capital'].sum()
-    
-    # Define Sensitivity Scenarios (Simple +/- 10% or 1% shocks)
-    # Note: Simplified logic for visualization
     scenarios = [
-        {"Factor": "WACC (+1%)", "Impact": base_npv * 0.92}, # Higher rate reduces NPV
-        {"Factor": "WACC (-1%)", "Impact": base_npv * 1.08}, # Lower rate increases NPV
-        {"Factor": "Capex Overrun (+10%)", "Impact": base_npv - (total_capex * 0.10)},
-        {"Factor": "Capex Savings (-10%)", "Impact": base_npv + (total_capex * 0.10)},
-        {"Factor": "ROI Shortfall (-10%)", "Impact": base_npv * 0.85},
-        {"Factor": "ROI Outperformance (+10%)", "Impact": base_npv * 1.15},
+        {"Factor": "WACC (+1%)", "Impact": base_npv * 0.92}, 
+        {"Factor": "WACC (-1%)", "Impact": base_npv * 1.08},
+        {"Factor": "Capex (+10%)", "Impact": base_npv - (portfolio['Investment_Capital'].sum() * 0.10)},
+        {"Factor": "ROI (-10%)", "Impact": base_npv * 0.85},
     ]
-    
     df_sens = pd.DataFrame(scenarios)
-    df_sens["Change_from_Base"] = df_sens["Impact"] - base_npv
-    
-    fig = px.bar(df_sens, y="Factor", x="Change_from_Base", orientation='h',
-                 title="Sensitivity Analysis (NPV Impact)",
-                 text_auto='.2s',
-                 color="Change_from_Base", color_continuous_scale="RdBu")
+    df_sens["Change"] = df_sens["Impact"] - base_npv
+    fig = px.bar(df_sens, y="Factor", x="Change", orientation='h', title="NPV Sensitivity", color="Change", color_continuous_scale="RdBu")
     return dark_chart(fig)
 
-def generate_board_report(portfolio, rejected, budget, wacc):
-    """Generates a text-based Board Report."""
-    txt = f"""
-================================================================
-CAPITALIQ-AI: STRATEGIC CAPITAL ALLOCATION REPORT
-================================================================
-Date: {pd.Timestamp.now().strftime('%Y-%m-%d')}
-Confidentiality: Internal Use Only
-
-1. EXECUTIVE SUMMARY
-----------------------------------------------------------------
-Total Budget Authorized:    INR {budget:,.2f}
-Total Capital Deployed:     INR {portfolio['Investment_Capital'].sum():,.2f}
-Utilization Rate:           {portfolio['Investment_Capital'].sum()/budget*100:.2f}%
-Weighted Avg Cost of Capital (WACC): {wacc*100:.1f}%
-
-PROJECTED OUTCOMES:
--------------------
-Net Present Value (NPV):    INR {portfolio['Dynamic_NPV'].sum():,.2f}
-Avg Return on Investment:   {portfolio['Pred_ROI'].mean():.2f}%
-Avg Payback Period:         {portfolio['Payback_Years'].mean():.2f} Years
-Strategic Alignment Score:  {portfolio['Strategic_Alignment'].mean():.2f} / 10
-
-2. APPROVED PORTFOLIO
-----------------------------------------------------------------
-"""
+# --- NEW: Report Generator ---
+def generate_board_report(portfolio, budget, wacc):
+    txt = f"CAPITALIQ-AI REPORT\n-------------------\nBudget: INR {budget:,.2f}\nDeployed: INR {portfolio['Investment_Capital'].sum():,.2f}\nNPV: INR {portfolio['Dynamic_NPV'].sum():,.2f}\nWACC: {wacc*100:.1f}%\n\nAPPROVED PROJECTS:\n"
     for _, row in portfolio.iterrows():
-        txt += f"[✓] {row['Project_ID']} | {row['Department']}\n"
-        txt += f"    Cost: {row['Investment_Capital']:,.0f} | ROI: {row['Pred_ROI']:.1f}% | NPV: {row['Dynamic_NPV']:,.0f}\n\n"
-
-    txt += """
-3. REJECTED PROPOSALS (Key Reasons)
-----------------------------------------------------------------
-"""
-    for _, row in rejected.head(5).iterrows():
-        txt += f"[X] {row['Project_ID']} | {row['Department']}\n"
-        txt += f"    Reason: Low Efficiency ({row['Efficiency']:.2f}) or Budget Cap.\n\n"
-        
-    txt += "\nGenerated by CapitalIQ-AI Enterprise Engine."
+        txt += f"[x] {row['Project_ID']} | ROI: {row['Pred_ROI']:.1f}%\n"
     return txt
 
 def dark_chart(fig):
@@ -297,32 +237,27 @@ def process_data_callback():
     """Callback to process data immediately upon upload."""
     if st.session_state.u_hist is not None and st.session_state.u_prop is not None:
         try:
-            # 1. Read & Standardize
+            # UPDATED: Use standardize_columns
             df_hist = standardize_columns(pd.read_csv(st.session_state.u_hist))
             df_prop = standardize_columns(pd.read_csv(st.session_state.u_prop))
             
-            # 2. Train
             rf_roi, feature_imp = train_models(df_hist)
-            
-            # 3. Predict
             features = ["Investment_Capital", "Duration_Months", "Risk_Score", "Strategic_Alignment", "Market_Trend_Index"]
-            # Ensure features exist in prop data
+            # Ensure features exist
             for f in features:
                 if f not in df_prop.columns: df_prop[f] = 0
             
             df_prop["Pred_ROI"] = rf_roi.predict(df_prop[features])
             
-            # 4. Save State
             st.session_state['df_prop'] = df_prop
             st.session_state['feature_imp'] = feature_imp
             st.session_state.page_selection = "Executive Summary"
-            
         except Exception as e:
             st.error(f"Error processing files: {e}")
 
 def load_demo_callback():
     """Callback for Demo Data button."""
-    df_hist, df_prop = get_templates() # Already standard names
+    df_hist, df_prop = get_templates()
     rf_roi, feature_imp = train_models(df_hist)
     features = ["Investment_Capital", "Duration_Months", "Risk_Score", "Strategic_Alignment", "Market_Trend_Index"]
     df_prop["Pred_ROI"] = rf_roi.predict(df_prop[features])
@@ -342,7 +277,7 @@ def reset_data_callback():
 # ----------------------------------------------------
 with st.sidebar:
     st.title("CAPITALIQ-AI")
-    st.caption("Enterprise Portfolio Optimizer")
+    st.caption("Strategic Portfolio Optimizer")
     st.markdown("---")
     
     # Navigation
@@ -357,17 +292,18 @@ with st.sidebar:
     st.subheader("Constraints & Sandbox")
     budget_input = st.number_input("Budget (INR)", value=15000000.0, step=500000.0)
     wacc_input = st.slider("WACC (%)", 5.0, 20.0, 10.0, help="Weighted Average Cost of Capital") / 100
-    min_dept_spend = st.slider("Min Dept. Allocation (%)", 0, 30, 0, help="Force the AI to give at least X% of budget to every department (Strategic Balance).") / 100
+    # NEW: Dept Constraint
+    min_dept_spend = st.slider("Min Dept. Allocation (%)", 0, 30, 0) / 100
     
-    st.markdown("#### Market Conditions")
-    max_risk = st.slider("Max Portfolio Risk", 1.0, 10.0, 7.5)
-    market_shock = st.slider("Macro Scenario", -0.20, 0.20, 0.0, 0.01, format="%+.0f%%")
+    max_risk = st.slider("Max Portfolio Risk", 1.0, 10.0, 6.5)
+    market_shock = st.slider("Market Scenario", -0.20, 0.20, 0.0, 0.01, format="%+.0f%%")
     
     st.markdown("---")
+    # Using callback for reset to ensure page switch happens
     st.button("Reset / Clear All Data", use_container_width=True, on_click=reset_data_callback)
 
     st.markdown("---")
-    st.caption("© 2026 CapitalIQ-AI. Enterprise Edition.")
+    st.caption("© 2026 CapitalIQ-AI. Enterprise Edition. All Rights Reserved.")
 
 # ----------------------------------------------------
 # 5. Main Content
@@ -380,7 +316,7 @@ if selected_page == "Home & Data":
     # Persistence Check
     if 'df_prop' in st.session_state:
         st.success("✅ Data System Online: Predictive Models Trained & Ready.")
-        st.info("Your dataset is currently loaded in memory.")
+        st.info("Your dataset is currently loaded in memory. You do not need to re-upload unless you want to change datasets.")
         
         col1, col2 = st.columns(2)
         with col1:
@@ -397,11 +333,10 @@ if selected_page == "Home & Data":
         with col_intro:
             st.markdown("### The Enterprise Standard for AI-Driven Capital Allocation")
             st.info("""
-            **Enterprise Workflow:**
-            1. **Ingest:** Upload historical project data to train predictive models.
-            2. **Constraint:** Configure WACC, Budget, and Departmental Floors.
-            3. **Optimize:** Linear Programming (PuLP) selects the mathematically optimal portfolio.
-            4. **Report:** Generate Board-Ready PDF/Text reports.
+            **Workflow:**
+            1. **Upload** historical project data to train the predictive models.
+            2. **Configure** financial constraints (Budget, WACC) in the sidebar.
+            3. **Analyze** the optimized portfolio across various strategic dimensions.
             """)
             h_temp, p_temp = get_templates()
             c1, c2 = st.columns(2)
@@ -426,95 +361,117 @@ if 'df_prop' in st.session_state:
     df_prop = st.session_state['df_prop'].copy()
     feature_imp = st.session_state['feature_imp']
     
-    # 1. Apply Market Shocks
+    # Dynamic Updates
     df_prop["Pred_ROI"] = df_prop["Pred_ROI"] * (1 + market_shock)
-    
-    # 2. Calculate Financials
     df_prop["Dynamic_NPV"] = df_prop.apply(lambda row: calculate_dynamic_npv(row, wacc_input), axis=1)
+    # NEW: Payback Calc
     df_prop["Payback_Years"] = df_prop.apply(calculate_payback, axis=1)
     df_prop["Efficiency"] = df_prop["Pred_ROI"] / df_prop["Risk_Score"]
     
-    # 3. Run Optimization (With new Dept Constraints)
+    # UPDATED: Run Optimization with new Dept Constraint
     df_prop = run_advanced_optimization(df_prop, budget_input, min_dept_spend)
-    
-    # 4. Split Portfolios
     portfolio = df_prop[df_prop["Selected"] == 1]
-    rejected = df_prop[df_prop["Selected"] == 0]
 
 # --- PAGE: EXECUTIVE SUMMARY ---
 if selected_page == "Executive Summary":
     st.title("Executive Dashboard")
-    
-    # KPIS
     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-    kpi1.metric("Capital Deployed", f"₹{portfolio['Investment_Capital'].sum()/1e6:.2f}M", f"Util: {portfolio['Investment_Capital'].sum()/budget_input*100:.1f}%")
-    kpi2.metric("Projected NPV", f"₹{portfolio['Dynamic_NPV'].sum()/1e6:.2f}M", delta=f"Shock: {market_shock*100:+.0f}%")
-    kpi3.metric("Avg Payback Period", f"{portfolio['Payback_Years'].mean():.1f} Years", "Target: < 3.0")
-    kpi4.metric("Strategic Score", f"{portfolio['Strategic_Alignment'].mean():.1f}/10", f"Risk: {portfolio['Risk_Score'].mean():.1f}")
+    kpi1.metric("Projects Funded", f"{len(portfolio)}", f"Total: {len(df_prop)}")
+    kpi2.metric("Capital Deployed", f"₹{portfolio['Investment_Capital'].sum()/1e6:.2f}M", f"Util: {portfolio['Investment_Capital'].sum()/budget_input*100:.1f}%")
+    # UPDATED KPI
+    kpi3.metric("Projected NPV", f"₹{portfolio['Dynamic_NPV'].sum()/1e6:.2f}M", delta=f"Payback: {portfolio['Payback_Years'].mean():.1f} Yrs")
+    kpi4.metric("Avg Risk Score", f"{portfolio['Risk_Score'].mean():.2f}", f"Max: {max_risk}")
     
     st.markdown("---")
-    
-    # Charts
     c1, c2 = st.columns([2, 1])
     with c1:
         st.subheader("Capital Allocation by Department")
         if not portfolio.empty:
             fig = px.bar(portfolio, x="Department", y="Investment_Capital", color="Pred_ROI", title="Budget Distribution & ROI Heatmap", text_auto='.2s')
             st.plotly_chart(dark_chart(fig), use_container_width=True)
-            render_analysis(f"This distribution adheres to the minimum allocation of {min_dept_spend*100}% per department set in the sidebar.")
+            render_analysis(f"This chart visualizes where the capital is flowing. Dept Min Allocation set to: {min_dept_spend*100}%")
         else:
             st.info("No projects selected. Try increasing the budget.")
     with c2:
-        st.subheader("Reports")
-        report_txt = generate_board_report(portfolio, rejected, budget_input, wacc_input)
-        st.download_button("📄 Download Board Report", report_txt, "Board_Report.txt", "text/plain", use_container_width=True)
-        st.info("Download a professional text summary for stakeholder meetings.")
+        st.subheader("Actionable Reports")
+        # NEW: Report Download
+        report_txt = generate_board_report(portfolio, budget_input, wacc_input)
+        st.download_button("📄 Download Board Report", report_txt, "Board_Report.txt", use_container_width=True)
+        
+        st.markdown("##### Top ROI Drivers")
+        st.dataframe(feature_imp.head(3).style.background_gradient(cmap='Greens'), use_container_width=True, hide_index=True)
 
 # --- PAGE: AI INSIGHTS ---
 elif selected_page == "AI Insights":
     st.title("AI & Model Analytics")
     
+    # NEW: Tornado Chart added to column 1
     col1, col2 = st.columns(2)
     with col1:
-        st.markdown("##### 1. Sensitivity Analysis (Tornado Chart)")
+        st.markdown("##### 1. Sensitivity Analysis (Tornado)")
         if not portfolio.empty:
             fig_torn = generate_tornado_chart(portfolio, wacc_input)
             st.plotly_chart(fig_torn, use_container_width=True)
-            render_analysis("This Tornado Chart simulates shocks. The wider the bar, the more sensitive your NPV is to that factor. 'WACC' is usually the biggest driver.")
+            render_analysis("Visualizes how NPV changes if WACC or Costs swing +/-.")
         else:
             st.warning("No portfolio to analyze.")
-
+        
     with col2:
         st.markdown("##### 2. Predictive Drivers")
         fig_imp = px.bar(feature_imp, x="Importance", y="Feature", orientation='h', color="Importance", color_continuous_scale="Teal")
         st.plotly_chart(dark_chart(fig_imp), use_container_width=True)
-        render_analysis("These features drive the AI's ROI predictions.")
 
     st.markdown("---")
+    st.markdown("##### 3. The Shape of Success (Radar Profile)")
     
-    # Radar Chart
-    st.markdown("##### 3. Profile Comparison (Funded vs Rejected)")
+    # Prepare Radar Data
     radar_data = df_prop.groupby("Selected")[["Risk_Score", "Strategic_Alignment", "Pred_ROI"]].mean().reset_index()
     categories = ["Risk", "Strategy", "ROI"]
+    
     fig_radar = go.Figure()
     
+    # Funded Trace
     if 1 in radar_data["Selected"].values:
         row_funded = radar_data[radar_data["Selected"] == 1].iloc[0]
-        fig_radar.add_trace(go.Scatterpolar(r=[row_funded["Risk_Score"], row_funded["Strategic_Alignment"], row_funded["Pred_ROI"]], theta=categories, fill='toself', name='Funded', line_color='#00e676'))
-    
+        fig_radar.add_trace(go.Scatterpolar(
+            r=[row_funded["Risk_Score"], row_funded["Strategic_Alignment"], row_funded["Pred_ROI"]],
+            theta=categories,
+            fill='toself',
+            name='Funded (Avg)',
+            line_color='#00e676'
+        ))
+
+    # Rejected Trace
     if 0 in radar_data["Selected"].values:
         row_rej = radar_data[radar_data["Selected"] == 0].iloc[0]
-        fig_radar.add_trace(go.Scatterpolar(r=[row_rej["Risk_Score"], row_rej["Strategic_Alignment"], row_rej["Pred_ROI"]], theta=categories, fill='toself', name='Rejected', line_color='#ff1744'))
-        
-    fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 10])), template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", font=dict(color="#e2e8f0"))
+        fig_radar.add_trace(go.Scatterpolar(
+            r=[row_rej["Risk_Score"], row_rej["Strategic_Alignment"], row_rej["Pred_ROI"]],
+            theta=categories,
+            fill='toself',
+            name='Rejected (Avg)',
+            line_color='#ff1744'
+        ))
+
+    fig_radar.update_layout(
+        polar=dict(radialaxis=dict(visible=True, range=[0, 10])), 
+        showlegend=True,
+        template="plotly_dark",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#e2e8f0")
+    )
     st.plotly_chart(fig_radar, use_container_width=True)
 
 # --- PAGE: EFFICIENT FRONTIER ---
 elif selected_page == "Efficient Frontier":
     st.title("Efficient Frontier Simulation")
-    sim_runs = st.slider("Monte Carlo Iterations", 100, 2000, 500)
     
-    if st.button(f"Run {sim_runs} Simulations"):
+    # Slider for Iterations
+    sim_runs = st.slider("Monte Carlo Iterations", min_value=100, max_value=5000, value=1000, step=100, help="Higher iterations provide more statistical accuracy but take longer to compute.")
+    
+    if st.button(f"Run {sim_runs} Simulation Scenarios"):
+        st.markdown(f"Simulating {sim_runs} portfolio combinations...")
+        progress_bar = st.progress(0)
         results = []
         total_cap = df_prop["Investment_Capital"].sum()
         avg_p = min(0.5, budget_input / (total_cap + 1))
@@ -524,6 +481,9 @@ elif selected_page == "Efficient Frontier":
             sample = df_prop[mask]
             if not sample.empty and sample["Investment_Capital"].sum() <= budget_input:
                 results.append({"Risk": sample["Risk_Score"].mean(), "Return": sample["Pred_ROI"].mean(), "NPV": sample["Dynamic_NPV"].sum()})
+            if i % 50 == 0: progress_bar.progress(min(i/sim_runs, 1.0))
+        
+        progress_bar.empty()
         
         sim_df = pd.DataFrame(results)
         if not sim_df.empty:
@@ -531,18 +491,24 @@ elif selected_page == "Efficient Frontier":
             if not portfolio.empty:
                 fig_ef.add_trace(go.Scatter(x=[portfolio["Risk_Score"].mean()], y=[portfolio["Pred_ROI"].mean()], mode='markers', marker=dict(color='white', size=15, symbol='star'), name="Selected Portfolio"))
             st.plotly_chart(dark_chart(fig_ef), use_container_width=True)
-            # FIX: Using triple quotes to safely handle long text
-            render_analysis("""The White Star is your current portfolio. If it's near the top edge of the cloud, you are mathematically optimized.""")
+            render_analysis("The 'Efficient Frontier' represents the set of optimal portfolios. The White Star represents your current AI-selected portfolio.")
+        else:
+            st.error("Simulation failed to find valid portfolios within constraints.")
+
 # --- PAGE: OPTIMIZATION REPORT ---
 elif selected_page == "Optimization Report":
     st.title("Final Investment Schedule")
     tab1, tab2 = st.tabs(["Selected Projects", "Rejected Projects"])
     with tab1:
+        # Added Payback_Years to display
         st.dataframe(portfolio[["Project_ID", "Department", "Investment_Capital", "Pred_ROI", "Payback_Years", "Efficiency"]].style.format({"Investment_Capital": "₹{:,.0f}", "Pred_ROI": "{:.1f}%", "Payback_Years": "{:.1f} yrs", "Efficiency": "{:.2f}"}).background_gradient(subset=["Efficiency"], cmap="Greens"), use_container_width=True)
         csv = portfolio.to_csv(index=False).encode('utf-8')
-        st.download_button("Export CSV", csv, "Strategic_Portfolio.csv", "text/csv")
+        st.download_button("Export Portfolio (CSV)", csv, "Strategic_Portfolio.csv", "text/csv")
+        render_analysis("This is the final list of approved projects. The 'Efficiency' score is ROI / Risk; higher values are better.")
     with tab2:
-        st.dataframe(rejected[["Project_ID", "Department", "Investment_Capital", "Pred_ROI", "Efficiency"]], use_container_width=True)
+        rejected = df_prop[df_prop["Selected"] == 0]
+        st.dataframe(rejected[["Project_ID", "Investment_Capital", "Pred_ROI"]], use_container_width=True)
+        render_analysis("These projects were rejected because they either did not meet the WACC hurdle rate or had excessive risk scores.")
 
 # --- PAGE: STRATEGIC 3D MAP ---
 elif selected_page == "Strategic 3D Map":
@@ -550,7 +516,7 @@ elif selected_page == "Strategic 3D Map":
     df_prop["Status"] = df_prop["Selected"].apply(lambda x: "Funded" if x==1 else "Not Funded")
     fig_3d = px.scatter_3d(df_prop, x="Risk_Score", y="Strategic_Alignment", z="Pred_ROI", color="Status", size="Investment_Capital", opacity=0.8, color_discrete_map={"Funded": "#00e676", "Not Funded": "#ff1744"})
     st.plotly_chart(dark_chart(fig_3d), use_container_width=True)
-    render_analysis("Visualizes the 'Sweet Spot': High Strategy (Y), High ROI (Z), Low Risk (X).")
+    render_analysis("Axis X is Risk, Axis Y is Strategic Alignment, and Axis Z is ROI. Green bubbles are funded projects. Notice how the AI avoids the 'bottom-front' corners (Low Strategy, Low ROI).")
 
 # --- PAGE: SCENARIO MANAGER ---
 elif selected_page == "Scenario Manager":
@@ -558,17 +524,20 @@ elif selected_page == "Scenario Manager":
     col_save, col_view = st.columns([1, 3])
     with col_save:
         scenario_name = st.text_input("Scenario Name", value="Base Case")
-        if st.button("Save State"):
-            s_data = {"Name": scenario_name, "WACC": wacc_input, "Budget": budget_input, "NPV": portfolio['Dynamic_NPV'].sum(), "ROI": portfolio['Pred_ROI'].mean(), "Payback": portfolio['Payback_Years'].mean()}
+        if st.button("Save Current State"):
+            s_data = {"Name": scenario_name, "WACC": wacc_input, "Budget": budget_input, "NPV": portfolio['Dynamic_NPV'].sum(), "ROI": portfolio['Pred_ROI'].mean(), "Projects": len(portfolio)}
             if 'scenarios' not in st.session_state: st.session_state['scenarios'] = []
             st.session_state['scenarios'].append(s_data)
-            st.success("Saved!")
+            st.success(f"Saved {scenario_name}!")
     with col_view:
         if 'scenarios' in st.session_state and st.session_state['scenarios']:
             s_df = pd.DataFrame(st.session_state['scenarios'])
             st.dataframe(s_df.style.format({"NPV": "₹{:,.0f}", "ROI": "{:.1f}%", "WACC": "{:.1f}%"}), use_container_width=True)
             fig_comp = px.bar(s_df, x="Name", y="NPV", color="ROI", title="Scenario NPV Comparison")
             st.plotly_chart(dark_chart(fig_comp), use_container_width=True)
+            render_analysis("This tool compares different strategic realities. Save different scenarios to see how NPV changes.")
+        else:
+            st.info("Adjust WACC/Budget in the sidebar, then click 'Save Current State' to compare scenarios.")
 
 # --- PAGE: AI DEAL MEMOS ---
 elif selected_page == "AI Deal Memos":
@@ -577,10 +546,12 @@ elif selected_page == "AI Deal Memos":
     with col_app:
         st.subheader("Top Approvals")
         for i, row in portfolio.sort_values(by="Dynamic_NPV", ascending=False).head(3).iterrows():
-            with st.expander(f"✅ {row['Project_ID']} | {row['Department']}", expanded=True):
-                st.markdown(f"**NPV:** ₹{row['Dynamic_NPV']/1e5:.1f}L | **Payback:** {row['Payback_Years']:.1f} Yrs\n\n**Logic:** High WACC-adjusted return with acceptable strategic fit.")
+            with st.expander(f"APPROVED: {row['Project_ID']} ({row['Department']})", expanded=True):
+                st.markdown(f"**Rationale:**\n* **NPV Contribution:** ₹{row['Dynamic_NPV']/1e5:.1f} Lakhs\n* **Strategic Fit:** {row['Strategic_Alignment']}/10\n* **Decision:** Approved due to high WACC-adjusted return.")
     with col_rej:
         st.subheader("Top Rejections")
+        rejected = df_prop[df_prop["Selected"] == 0]
         for i, row in rejected.sort_values(by="Pred_ROI", ascending=False).head(3).iterrows():
-            with st.expander(f"❌ {row['Project_ID']} | {row['Department']}"):
-                st.markdown(f"**Issue:** Efficiency ({row['Efficiency']:.2f}) too low for current budget.\n\n**Advice:** Reduce capital cost or improve strategic alignment score.")
+            with st.expander(f"REJECTED: {row['Project_ID']} ({row['Department']})"):
+                st.markdown(f"**Rationale:**\n* **Issue:** Failed to beat capital cost hurdle or budget constraint.\n* **Risk Score:** {row['Risk_Score']}\n* **Decision:** Deferred to next fiscal cycle.")
+    render_analysis("These memos are auto-generated explanations for the top decisions, helping stakeholders understand the financial and strategic justification.")

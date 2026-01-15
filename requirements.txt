@@ -4,5 +4,6 @@ numpy
 plotly
 scikit-learn
 pulp
-fpdf
 google-generativeai
+fpdf
+matplotlib
